@@ -1,3 +1,9 @@
 .vs
 wowinstance/.vs
 wowlauncher/.vs
+/wowinstance/packages
+/wowinstance/wowinstance/obj
+/wowinstance/wowinstance/bin
+/wowlauncher/packages
+/wowlauncher/wowlauncher/obj
+/wowlauncher/wowlauncher/bin
