@@ -6,11 +6,12 @@ using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using System.Diagnostics;
-using WindowsInput;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Net;
+using WindowsInput.Native;
+using System.Security.Cryptography.X509Certificates;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct POINT
@@ -45,6 +46,12 @@ namespace wowinstance
 {
     class Program
     {
+        public static int waitTime = 5000;
+
+        public static string folderSeparator => InLinux() ? "/" : "\\";
+        private static bool linux;
+        private static bool debug;
+
         [DllImport("user32.dll")]
         public static extern IntPtr FindWindowEx(IntPtr parentWindow, IntPtr previousChildWindow, string windowClass, string windowTitle);
 
@@ -53,7 +60,7 @@ namespace wowinstance
         public static bool InLinux()
         {
             string path = Directory.GetCurrentDirectory();
-            if (path.IndexOf("/root/") != -1)
+            if (path.IndexOf("/home/") != -1)
             {
                 return true;
             }
@@ -121,35 +128,56 @@ namespace wowinstance
         [DllImport("user32.dll")]
         static extern byte VkKeyScan(char ch);
         static private int[,,] colors_pixels_ws ={
-            //title screen
+            //title screen  0
             { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
-            //char select
-            { { 546,689,0x454343 },{0,0,0 } },
-            //ingame 
-            { { 10,705,0x120C0D },{0,0,0 } },
-            //auction house
-            { { 171,440,0x0 },{0,0,0 } }
+            //char select   1
+            { { 450,550,0x050d7c },{450,550,0x04046d } },
+            //ingame        2
+            { { 10,705,0x120C0D },{10,705,0x120C0D } },
+            //auction house 3
+            { { 171,440,0x0 },{171,440,0x0 } },
+            // scanning     4
+            { { 166,19,0x4c4c4c },{ 166,19,0x4c4c4c } },
         };
 
         static private int[,,] colors_pixels_linux={
-            //title screen
+            //title screen  0
             { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
-            //char select
-            { { 546,689,0x454342 },{0,0,0 } },
-            //ingame 
-            { { 10,705,0x110B0C },{0,0,0 } },
-            //auction house
-            { { 171,440,0x0 },{0,0,0 } }
+            //char select   1
+            { { 450,550,0x050d7b },{ 450,550,0x070671 } },
+            //ingame        2
+            { { 780,594,0x177cb9 },{ 780,594,0x177cb9 } },
+            //auction house 3
+            { { 225,17,0x000062 },{ 225,17,0x000062 } },
+            // scanning     4
+            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
         };
-        static private int[,,] colors_pixels = { 
-            //title screen
+
+        static private int[,,] colors_pixels_linux_alt ={
+            //title screen  0
             { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
-            //char select
-            { { 546,689,0x454243 },{0,0,0 } },
-            //ingame 
-            { { 10,705,0x120C0D },{0,0,0 } },
-            //auction house
-            { { 171,440,0x0 },{0,0,0 } }
+            //char select   1
+            { { 450,550,0x050d7b },{ 450,550,0x070671 } },
+            //ingame        2
+            { { 780,594,0x187dba },{ 780,594,0x187dba } },
+            //auction house 3
+            { { 225,17,0x000063 },{ 225,17,0x000063 } },
+            // scanning     4
+            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
+        };
+
+        static private int[,,] colors_pixels = { 
+            //title screen  0
+            { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
+            //char select   1
+            { { 450,550,0x050d7c },{ 450,550,0x070672 } },
+            //ingame        2
+            { { 780,594,0x187dbb },{ 780,594,0x187dbb } },
+            //auction house 3
+            { { 225,17,0x000063 },{ 225,17,0x000063 } },
+            // scanning     4
+            { { 166,19,0x4c4c4c },{ 166,19,0x4b4c4b } },
+
         };
         [StructLayout(LayoutKind.Sequential)]
         public struct RECT
@@ -188,7 +216,7 @@ namespace wowinstance
         private static void ClearAucData(string accname)
         {
             var current_path = Directory.GetCurrentDirectory();
-            current_path += "\\WTF\\Account\\" + accname.ToUpper() + "\\SavedVariables\\";
+            current_path += $"{folderSeparator}WTF{folderSeparator}Account{folderSeparator}" + accname.ToUpper() + "{folderSeparator}SavedVariables{folderSeparator}";
             string final_path = current_path + "Auc-ScanData.lua";
             if (File.Exists(final_path))
                 File.Delete(final_path);
@@ -201,11 +229,11 @@ namespace wowinstance
         private static void SetupRealm(string realmname,string realm_url)
         {
             var current_path = Directory.GetCurrentDirectory();
-            if (File.Exists(current_path + "\\Data\\enUS\\realmlist.wtf"))
+            if (File.Exists(current_path + $"{folderSeparator}Data{folderSeparator}enUS{folderSeparator}realmlist.wtf"))
             {
-                File.Delete(current_path + "\\Data\\enUS\\realmlist.wtf");
+                File.Delete(current_path + $"{folderSeparator}Data{folderSeparator}enUS{folderSeparator}realmlist.wtf");
             }
-            current_path += "\\WTF\\Config.wtf";
+            current_path += $"{folderSeparator}WTF{folderSeparator}Config.wtf";
             if (!File.Exists(current_path))
             {
                 throw new Exception(current_path + " NOT FOUND!");
@@ -240,28 +268,46 @@ namespace wowinstance
           
             return pixel;
         }
-        static public bool TestPixel(IntPtr wnd,int index)
+        static public bool TestPixel(IntPtr wnd,int index, int factionIdx)
         {
-            int x = colors_pixels[index,0,0];
-            int y = colors_pixels[index, 0, 1];
+            int x = colors_pixels[index, factionIdx, 0];
+            int y = colors_pixels[index, factionIdx, 1];
             int color = 0;
-            if (InLinux())
+            int altColor = 0;
+            if (linux)
             {   
-                color = colors_pixels_linux[index, 0, 2];
+                color = colors_pixels_linux[index, factionIdx, 2];
+                altColor = colors_pixels_linux_alt[index, factionIdx, 2];
             }
             else if (InWindowsServer())
             {
-                color = colors_pixels_ws[index, 0, 2];
+                color = colors_pixels_ws[index, factionIdx, 2];
             }
             else
-                color = colors_pixels[index, 0, 2];
+                color = colors_pixels[index, factionIdx, 2];
 
             uint col = GetPixelColor(wnd, x, y);
-            //Console.WriteLine("Testing pixel against " + col + " " + color);
-            if (col == color)
+
+            if (debug)
+                Trace.WriteLine("Testing pixel against " + col + " " + color + (altColor != 0 ? " / " + altColor : ""));
+
+            if (col == color || col == altColor)
                 return true;
             else
                 return false;
+        }
+
+        static public bool WaitForPixel(IntPtr wnd, int index, int factionIdx, int maxSecs = 60)
+        {
+            int count = 0;
+            while (!TestPixel(wnd, index, factionIdx))
+            {
+                System.Threading.Thread.Sleep(1000);
+                count++;
+                if (count > maxSecs)
+                    return false;
+            }
+            return true;
         }
 
         static void rightclick(IntPtr wnd, int x, int y)
@@ -277,11 +323,18 @@ namespace wowinstance
 
         static int Main(string[] args)
         {
+            // Dirty hack to let us use https. Big reason to move to net6
+            ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate (object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
+            {
+                return true;
+            });
+
             try
             {
                 if (args.Count() == 0)
                 {
-                    Console.WriteLine("No arguments passed.");
+                    Trace.WriteLine("No arguments passed.");
+                    Environment.Exit(1);
                     return 1;
                 }
 
@@ -293,6 +346,14 @@ namespace wowinstance
                 string auctioneer = args[5];
                 string base_url = args[6];
                 string faction = args[7];
+                int factionIdx = (faction == "a") ? 1 : 0;
+                linux = false;
+                if (args.Count() > 8 && args[8] == "1")
+                {
+                    linux = true;
+                    waitTime = 30000;
+                }
+
                 const int EXPAC_WOTLK = 1;
                 const int EXPAC_TBC = 2;
                 Process p = new Process();
@@ -319,21 +380,35 @@ namespace wowinstance
                 Trace.WriteLine(getDT() + args[6]);
                 Trace.WriteLine(getDT() + args[7]);
 
-                string exename = "wowclean.exe";
+                // Get linux flag
+                if (args.Count() > 8 && args[8] == "1")
+                    Trace.WriteLine(getDT() + args[8] + " / " + linux.ToString());
+
+                // Get debug flag
+                debug = args.Count() > 9 && args[9] == "1";
+
+                string exename = InLinux() ? "wine" : "wowclean.exe";
                 if (File.Exists("wowtbc.exe"))
                 {
                     expac_mode = EXPAC_TBC;
                     exename = "wowtbc.exe";
                 }
                 p.StartInfo.FileName = exename;
+                //p.StartInfo.UseShellExecute = false;
+                //p.StartInfo.RedirectStandardError = true;
+                if (InLinux())
+                    p.StartInfo.Arguments = "wowclean.exe";
+
                 var current_path = Directory.GetCurrentDirectory();
+                Trace.WriteLine($"Current folder: {current_path}");
                 ClearAucData(accountname);
                 SetupRealm(realm_name, realm_url);
                 if (p.Start())
                 {
                     WebClientEx status_client = new WebClientEx();
-                    status_client.DownloadStringAsync(new Uri((base_url +"scheduler/start?realm_id="+realm_id+"&faction_id="+faction)));
-                    System.Threading.Thread.Sleep(15000);
+                    status_client.Timeout = 6000;
+                    status_client.DownloadString(new Uri((base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction)));
+                    System.Threading.Thread.Sleep(waitTime);
 
                     IntPtr wnd;
 
@@ -357,29 +432,40 @@ namespace wowinstance
                     System.Threading.Thread.Sleep(1000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
-                    System.Threading.Thread.Sleep(15000);
+                    //System.Threading.Thread.Sleep(waitTime);
+                    System.Threading.Thread.Sleep(2000);
                     //SetForegroundWindow(p.MainWindowHandle);
-                    if (!TestPixel(wnd, 1))
+                    if (!WaitForPixel(wnd, 1, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Not at char select window");
                         p.Kill();
-                        status_client.DownloadStringAsync(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+at+char+select+window")));
+                        status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+at+char+select+window")));
                         //Console.ReadKey();
+                        p.WaitForExit();
+                        p.Dispose();
+                        Environment.Exit(2);
                         return 2;
                     }
+                    Trace.WriteLine("Passing char select screen");
+                    System.Threading.Thread.Sleep(2000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
-                    System.Threading.Thread.Sleep(30000);
+                    //System.Threading.Thread.Sleep(waitTime);
                     //SetForegroundWindow(p.MainWindowHandle);
-                    if (!TestPixel(wnd, 2))
+                    if (!WaitForPixel(wnd, 2, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Not in game");
                         p.Kill();
-                        status_client.DownloadStringAsync(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Not+in+game")));
+                        status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Not+in+game")));
                         //Console.ReadKey();
+                        p.WaitForExit();
+                        p.Dispose();
+                        Environment.Exit(2);
                         return 2;
                     }
-                    var start_url = base_url + "scheduler/start?realm_id="+realm_id+"&faction_id="+faction;
+                    Trace.WriteLine("In game");
+                    System.Threading.Thread.Sleep(2000);
+                    var start_url = base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction;
 
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     System.Threading.Thread.Sleep(100);
@@ -404,14 +490,19 @@ namespace wowinstance
                         SetCursorPosition(r.Left + ((r.Right - r.Left) / 2), r.Top + ((r.Bottom - r.Top) / 2));
                         rightclick(wnd, 0, 0);
                     }
-                    System.Threading.Thread.Sleep(3000);
-                    if (!TestPixel(wnd, 3))
+                    //System.Threading.Thread.Sleep(3000);
+                    if (!WaitForPixel(wnd, 3, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Auction house not opened");
                         p.Kill();
-                        status_client.DownloadStringAsync(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=auction+house+not+opened")));
+                        status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=auction+house+not+opened")));
+                        p.WaitForExit();
+                        p.Dispose();
+                        Environment.Exit(2);
                         return 2;
                     }
+                    Trace.WriteLine("Auction house opened");
+                    System.Threading.Thread.Sleep(5000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     System.Threading.Thread.Sleep(100);
                     sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
@@ -426,6 +517,28 @@ namespace wowinstance
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateTextEntry("/auc scan");
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
+
+                    // Check if scanning started
+                    var maxtries = 5;
+                    while (!WaitForPixel(wnd, 4, factionIdx, 5) && maxtries > 0)
+                    {
+                        // If not, keep trying to initiate scan
+                        Trace.WriteLine("Retrying auction scan");
+                        System.Threading.Thread.Sleep(1000);
+                        sendKeys(wnd, (int)VirtualKeyCode.RETURN);
+                        System.Threading.Thread.Sleep(100);
+                        sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
+                        System.Threading.Thread.Sleep(100);
+                        if (expac_mode == EXPAC_TBC)
+                            sendChars(wnd, "script AucAdvanced.Scan.StartScan()");
+                        else
+                            sendChars(wnd, "auc scan");
+
+                        System.Threading.Thread.Sleep(100);
+                        sendKeys(wnd, (int)VirtualKeyCode.RETURN);
+                        maxtries--;
+                    }
+                    Trace.WriteLine("Auction scan started");
 
                     bool myswitch = false;
                     Random rand = new System.Random();
@@ -443,13 +556,16 @@ namespace wowinstance
                         uint pixel = GetPixelColor(p.MainWindowHandle, x, y);
                         Console.Write("{0:X} [" + x + "," + y + "] \n", pixel);
                         */
-                        if (!TestPixel(wnd, 2) && (counter % 10) == 0)
+                        if (!TestPixel(wnd, 2, factionIdx) && (counter % 10) == 0)
                         {
                             Trace.WriteLine(getDT() + "We are not ingame any more , mostly restart or crash");
                             if (failcount >= 3)
                             {
-                                status_client.DownloadStringAsync(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+in+game+anymore+mostly+crash+or+restart")));
+                                status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+in+game+anymore+mostly+crash+or+restart")));
                                 p.Kill();
+                                p.WaitForExit();
+                                p.Dispose();
+                                Environment.Exit(3);
                                 return 3;
                             }
                             else
@@ -458,7 +574,7 @@ namespace wowinstance
                             }
 
                         }
-                        if (!TestPixel(wnd, 3) && (counter % 10) == 0)
+                        if (!TestPixel(wnd, 3, factionIdx) && (counter % 10) == 0)
                         {
                             //SetForegroundWindow(p.MainWindowHandle);
                             Trace.WriteLine(getDT() + "Auction House not opened, trying to reopen and continue");
@@ -502,7 +618,18 @@ namespace wowinstance
                         System.Threading.Thread.Sleep(1000);
                         if (counter >= timeout)
                         {
-                            status_client.DownloadStringAsync(new Uri((base_url + "scheduler/ping?realm_id=" + realm_id + "&faction_id=" + faction)));
+                            if ((DateTime.Now.ToUniversalTime()-p.StartTime.ToUniversalTime()).TotalSeconds > 60 * 60)
+                            {
+                                Trace.WriteLine(getDT() + "Client has been running too long, must be stuck. Killing it.");
+                                status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=timed+out+in+auction+screen")));
+                                p.Kill();
+                                p.WaitForExit();
+                            }
+
+                            // Screenshot
+                            sendKeys(wnd, (int)VirtualKeyCode.OEM_4);
+
+                            status_client.DownloadString(new Uri((base_url + "scheduler/ping?realm_id=" + realm_id + "&faction_id=" + faction)));
                             Trace.WriteLine(getDT() + "Time to wake up");
                             //SetForegroundWindow(p.MainWindowHandle);
                             if (myswitch)
@@ -532,28 +659,34 @@ namespace wowinstance
                     Trace.WriteLine(getDT() + "Process Complete...");
                     System.Threading.Thread.Sleep(5000);
                     current_path = Directory.GetCurrentDirectory();
-                    current_path += "\\WTF\\Account\\" + accountname.ToUpper() + "\\SavedVariables\\Auc-ScanData.lua";
+                    current_path += $"{folderSeparator}WTF{folderSeparator}Account{folderSeparator}" + accountname.ToUpper() + $"{folderSeparator}SavedVariables{folderSeparator}Auc-ScanData.lua";
+                    p.Dispose();
                     if (File.Exists(current_path))
                     {
                         Trace.WriteLine(getDT() + "Uploading file");
                         WebClientEx client1 = new WebClientEx();
                         client1.Timeout = 600000;
                         string myfile1 = @current_path;
-                        client1.Credentials = CredentialCache.DefaultCredentials;
-                        byte[] ret = client1.UploadFile(base_url + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
+                        var base_url_insecure = base_url.Replace("https", "http");
+                        byte[] ret = client1.UploadFile(base_url_insecure + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
+                        //byte[] ret = client1.UploadFile(base_url + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
                         Trace.WriteLine(System.Text.Encoding.ASCII.GetString(ret));
-                        status_client.DownloadStringAsync(new Uri((base_url + "scheduler/end?realm_id=" + realm_id + "&faction_id=" + faction)));
+                        status_client.DownloadString(new Uri((base_url + "scheduler/end?realm_id=" + realm_id + "&faction_id=" + faction)));
+                        //return 0;
+                        Environment.Exit(0);
                         return 0;
                     }
                     else
                     {
-                        status_client.DownloadStringAsync(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Failed+to+upload+file")));
+                        status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Failed+to+upload+file")));
+                        Environment.Exit(2);
                         return 2;
                     }
                 }
                 else
                 {
                     Trace.WriteLine(getDT() + "Opps wowclean.exe could not be started");
+                    Environment.Exit(1);
                     return 1;
                 }
             }
@@ -562,6 +695,7 @@ namespace wowinstance
                 Trace.WriteLine(e.Message);
                 Trace.WriteLine(e.Source);
                 Trace.WriteLine(e.StackTrace);
+                Environment.Exit(1);
                 return 1;
             }
         }
