@@ -10,19 +10,20 @@ using System.Runtime.InteropServices;
 using Newtonsoft.Json;
 using System.Diagnostics;
 using System.Collections;
+using System.Security.Cryptography.X509Certificates;
 
 class WoWInstance
 {
-    public int realm_id;
-    public string realm_name;
-    public string account_name;
-    public string password;
-    public string auctioneer_name;
-    public string faction;
-    public int last_modified_date;
-    public long  size;
-    public string connection_url;
-    public Process wowprocess;
+    public int RealmId;
+    public string RealmName;
+    public string AccountName;
+    public string Password;
+    public string AuctioneerName;
+    public string Faction;
+    public int LastModifiedDate;
+    public long Size;
+    public string ConnectionUrl;
+    public Process WowProcess;
 }
 namespace wowlauncher
 {
@@ -88,79 +89,166 @@ namespace wowlauncher
         
         static void Main(string[] args)
         {
-            string id = "";
-            string faction = "";
+            // Relax certificate check (TLS won't always be accepted)
+            ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate(object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
+            {
+                return true;
+            });
+
+            bool linux = false;
 
             if (args.Length > 0)
-                id = args[0];
-            if (args.Length > 1)
-                faction = args[1];
+                linux = (args[0] == "1");
 
-            ArrayList process_data = new ArrayList();
+            ArrayList processData = new ArrayList();
             dynamic realms;
             Console.WriteLine("Reading config file...");
             var ini = new IniFile(Directory.GetCurrentDirectory()+"\\config.ini");
-            var base_url = ini.Read("base_url", "config");
-            var query_url = ini.Read("query_url", "config");
-            var wow_path_wotlk = ini.Read("wow_path_wotlk", "config");
-            var wow_path_tbc = ini.Read("wow_path_tbc", "config");
+            var baseUrl = ini.Read("base_url", "config");
+            var queryUrl = ini.Read("query_url", "config");
+            var wowPathWotlk = ini.Read("wow_path_wotlk", "config");
+            var wowPathTbc = ini.Read("wow_path_tbc", "config");
+            var nextScreenshotClear = DateTime.UtcNow;
             while (true) // loop always
             {
-                var start_time_stamp = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
-                var fetch_url = base_url + "scheduler/index";
-                var json_str2 = new WebClient().DownloadString(fetch_url);
-                var realm_id = "";
-                var faction_id = "";
-                dynamic schedule_json = JsonConvert.DeserializeObject(json_str2);
-                for (var c = 0; c < schedule_json.Count; c++)
+                // Once a day clean up screenshots older than 2 days
+                if (DateTime.UtcNow >= nextScreenshotClear)
                 {
-                    realm_id = schedule_json[c].realm_id;
-                    faction_id = schedule_json[c].faction_id;
-                    var final_url = base_url + query_url + "?&id=" + realm_id + "&f=" + faction_id;
+                    // Get file info for all jpg files in screenshots folder
+                    var files = Directory.GetFiles(Directory.GetCurrentDirectory() + "\\Screenshots", "*.jpg").Select(file => new FileInfo(file));
+                    Console.WriteLine($"Checking {files.Count()} screenshots for deletion candidates");
+
+                    // Loop each file
+                    foreach (var file in files)
+                    {
+                        // Extract date from filename
+                        var datePart = file.Name.Replace("WoWScrnShot_", "").Replace(".jpg", "");
+
+                        // Validate the date
+                        if (DateTime.TryParseExact(datePart, "MMddyy_HHmmss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out DateTime fileDate))
+                        {
+                            // If the filename is more than 48 hours old, we'll delete it
+                            if (DateTime.Now.Subtract(fileDate).TotalHours > 48)
+                            {
+                                // Try to delete failing gracefully)
+                                Console.WriteLine($"Deleting {file.Name}");
+                                try
+                                {
+                                    File.Delete(file.FullName);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Failed to delete {file.FullName}: {ex.Message}");
+                                }
+                            }
+                        }
+                    }
+
+                    // Schedule another check in 24 hours
+                    nextScreenshotClear = DateTime.Now.AddHours(24);
+                }
+
+                var startTimeStamp = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
+                var scheduleUrl = baseUrl + "scheduler/index";
+                var scheduleResponse = new WebClient().DownloadString(scheduleUrl);
+                var realmId = "";
+                var factionId = "";
+                dynamic scheduleJson = JsonConvert.DeserializeObject(scheduleResponse);
+
+                // Search for any running wow
+                if (scheduleJson.Count > 0)
+                {
+                    //var processes = Process.GetProcessesByName("wowclean.exe");
+                    var processes = Process.GetProcesses().Where(row => row.ProcessName.ToLower().Contains("warcraft"));
+                    foreach (var process in processes)
+                    {
+                        Console.WriteLine($"Killing existing {process.ProcessName} process with id {process.Id}");
+                        process.Kill();
+                        if (!process.WaitForExit(5000))
+                            Console.WriteLine(" -- Failed!");
+
+                        process.Dispose();
+                    }
+                }
+
+                for (var c = 0; c < scheduleJson.Count; c++)
+                {
+                    realmId = scheduleJson[c].realm_id;
+                    factionId = scheduleJson[c].faction_id;
+                    var realmConfigUrl = baseUrl + queryUrl + "?&id=" + realmId + "&f=" + factionId;
                     try
                     {
-                        var json_str = new WebClient().DownloadString(final_url);
-                        dynamic json = JsonConvert.DeserializeObject(json_str);
-                        realms = json;
-                        for (var i = 0; i < json.Count; i++)
+                        var realmConfigResponse = new WebClient().DownloadString(realmConfigUrl);
+                        dynamic realmConfigJson = JsonConvert.DeserializeObject(realmConfigResponse);
+                        realms = realmConfigJson;
+                        for (var i = 0; i < realmConfigJson.Count; i++)
                         {
-                            var expac = json[i].expansion;
-                            var wow_path = wow_path_wotlk;
+                            var expac = realmConfigJson[i].expansion;
+                            var wowPath = wowPathWotlk;
                             if (expac == "3.3.5")
-                                wow_path = wow_path_wotlk;
+                                wowPath = wowPathWotlk;
                             else if (expac == "2.4.3")
-                                wow_path = wow_path_tbc;
+                                wowPath = wowPathTbc;
 
                             WoWInstance wowdata = new WoWInstance();
-                            wowdata.wowprocess = new Process();
-                            wowdata.wowprocess.StartInfo.FileName = wow_path + "wowinstance.exe";
-                            wowdata.wowprocess.StartInfo.WorkingDirectory = wow_path;
-                            wowdata.realm_name = json[i].name;
-                            wowdata.connection_url = json[i].connection_url;
-                            wowdata.realm_id = json[i].id;
+                            wowdata.WowProcess = new Process();
+                            wowdata.WowProcess.StartInfo.FileName = wowPath + "wowinstance.exe";
+                            wowdata.WowProcess.StartInfo.WorkingDirectory = wowPath;
+                            wowdata.RealmName = realmConfigJson[i].name;
+                            wowdata.ConnectionUrl = realmConfigJson[i].connection_url;
+                            wowdata.RealmId = realmConfigJson[i].id;
 
-                            wowdata.account_name = json[i].data.username;
-                            wowdata.auctioneer_name = json[i].data.auctioneer;
-                            wowdata.faction = json[i].faction;
-                            wowdata.password = json[i].data.password;
-                            string aucdata = wow_path + "WTF\\Account\\" + wowdata.account_name.ToUpper() + "\\SavedVariables\\Auc-ScanData.lua";
-                            if (File.Exists(aucdata))
+                            wowdata.AccountName = realmConfigJson[i].data.username;
+                            wowdata.AuctioneerName = realmConfigJson[i].data.auctioneer;
+                            wowdata.Faction = realmConfigJson[i].faction;
+                            wowdata.Password = realmConfigJson[i].data.password;
+                            string auctionData = wowPath + "WTF\\Account\\" + wowdata.AccountName.ToUpper() + "\\SavedVariables\\Auc-ScanData.lua";
+                            if (File.Exists(auctionData))
                             {
-                                wowdata.size = new System.IO.FileInfo(aucdata).Length;
+                                wowdata.Size = new System.IO.FileInfo(auctionData).Length;
                             }
                             else
                             {
-                                wowdata.last_modified_date = 0;
-                                wowdata.size = 0;
+                                wowdata.LastModifiedDate = 0;
+                                wowdata.Size = 0;
                             }
-                            wowdata.wowprocess.StartInfo.Arguments = wowdata.realm_id + " \"" + wowdata.realm_name + "\" \"" + wowdata.connection_url + "\" " + wowdata.account_name + " \"" + wowdata.password + "\" \"" + wowdata.auctioneer_name + "\" \"" + base_url + "\" " + wowdata.faction;
-                            Console.WriteLine("Start ..." + wowdata.wowprocess.StartInfo.Arguments);
-                            if (wowdata.wowprocess.Start())
+                            wowdata.WowProcess.StartInfo.Arguments = wowdata.RealmId + " \"" + wowdata.RealmName + "\" \"" + wowdata.ConnectionUrl + "\" " + wowdata.AccountName + " \"" + wowdata.Password + "\" \"" + wowdata.AuctioneerName + "\" \"" + baseUrl + "\" " + wowdata.Faction;
+                            if (linux)
+                                wowdata.WowProcess.StartInfo.Arguments += " 1";
+
+                            Console.WriteLine("Start ..." + wowdata.WowProcess.StartInfo.Arguments);
+                            if (wowdata.WowProcess.Start())
                             {
-                                Console.WriteLine("Process for realm id " + json[i].id);
-                                process_data.Add(wowdata);
+                                Console.WriteLine("Process for realm id " + realmConfigJson[i].id);
+                                processData.Add(wowdata);
                             }
-                            System.Threading.Thread.Sleep(60000);
+
+                            // Wait for process to exit or kill after 2 hours
+                            if (wowdata.WowProcess.WaitForExit(65 * 60 * 1000))     // Wait just over 1 hour
+                            {
+                                if (wowdata.WowProcess.ExitCode == 0) // everything OK
+                                {
+                                    Console.WriteLine("Realm " + wowdata.RealmName + " " + wowdata.Faction + " eneded successfully");
+                                }
+                                else if (wowdata.WowProcess.ExitCode == 1) // start failure
+                                {
+                                    Console.WriteLine("Realm " + wowdata.RealmName + " " + wowdata.Faction + " start failed");
+                                }
+                                else if (wowdata.WowProcess.ExitCode == 2) // login or script problem
+                                {
+                                    Console.WriteLine("Realm " + wowdata.RealmName + " " + wowdata.Faction + " scripting problem");
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("Process failed to exit within 1 hour");
+                                wowdata.WowProcess.Kill();
+                                wowdata.WowProcess.WaitForExit();
+                            }
+                            processData.Remove(wowdata);
+                            wowdata.WowProcess.Dispose();
+
+                            //System.Threading.Thread.Sleep(60000);
                         }
                     }
                     catch (WebException e) 
@@ -168,35 +256,33 @@ namespace wowlauncher
                         Console.WriteLine(e.Message);
                     }
                 }
-                while (process_data.Count > 0)
+                while (processData.Count > 0)
                 {
-                    for (var i = 0; i < process_data.Count; i++)
+                    for (var i = 0; i < processData.Count; i++)
                     {
-                        WoWInstance wow = (WoWInstance)process_data[i];
-                        if (wow.wowprocess.HasExited)
+                        WoWInstance wow = (WoWInstance)processData[i];
+                        if (wow.WowProcess.HasExited)
                         {
-                            if (wow.wowprocess.ExitCode == 0) // everything OK
+                            if (wow.WowProcess.ExitCode == 0) // everything OK
                             {
-                                Console.WriteLine("Realm " + wow.realm_name + " " + wow.faction + " eneded successfully");
+                                Console.WriteLine("Realm " + wow.RealmName + " " + wow.Faction + " eneded successfully");
                             }
-                            else if (wow.wowprocess.ExitCode == 1) // start failure
+                            else if (wow.WowProcess.ExitCode == 1) // start failure
                             {
-                                Console.WriteLine("Realm " + wow.realm_name + " " + wow.faction + " start failed");
+                                Console.WriteLine("Realm " + wow.RealmName + " " + wow.Faction + " start failed");
                             }
-                            else if (wow.wowprocess.ExitCode == 2) // login or script problem
+                            else if (wow.WowProcess.ExitCode == 2) // login or script problem
                             {
-                                Console.WriteLine("Realm " + wow.realm_name + " " + wow.faction + " scripting problem");
+                                Console.WriteLine("Realm " + wow.RealmName + " " + wow.Faction + " scripting problem");
                             }
-                            process_data.RemoveAt(i);
+                            processData.RemoveAt(i);
+                            wow.WowProcess.Dispose();
                         }
                     }
                     System.Threading.Thread.Sleep(1000);
                 }
-                var current_timestamp = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
-                var timeleft = (current_timestamp - start_time_stamp) - 3600; // time the process started minus now minus 1 hr in seconds we sleep for the remaining amount. 
-                if (timeleft < 0) // if below 0 just dont sleep and try again
-                    timeleft = 0;
-                System.Threading.Thread.Sleep(timeleft*1000); // every hour
+
+                System.Threading.Thread.Sleep(60 * 1000); // Wait a minute
             }
             
         }
