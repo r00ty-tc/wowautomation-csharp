@@ -35,8 +35,6 @@ public struct Rect
 }
 public class HttpClientEx : HttpClient
 {
-    //public int Timeout { get; set; }
-    
     public HttpResponseMessage Get(Uri address)
     {
         var responseTask = base.GetAsync(address);
@@ -358,12 +356,6 @@ namespace wowinstance
 
         static int Main(string[] args)
         {
-            // Dirty hack to let us use https. Big reason to move to net6
-            ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate (object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
-            {
-                return true;
-            });
-
             try
             {
                 if (args.Count() == 0)
@@ -429,8 +421,7 @@ namespace wowinstance
                     exename = "wowtbc.exe";
                 }
                 p.StartInfo.FileName = exename;
-                //p.StartInfo.UseShellExecute = false;
-                //p.StartInfo.RedirectStandardError = true;
+
                 if (InLinux())
                     p.StartInfo.Arguments = "wowclean.exe";
 
@@ -716,16 +707,11 @@ namespace wowinstance
                         HttpClientEx client1 = new HttpClientEx();
                         client1.Timeout = TimeSpan.FromMinutes(10);
                         string myfile1 = @current_path;
-                        //client1.Credentials = CredentialCache.DefaultCredentials;
-                        //var base_url_insecure = base_url.Replace("https", "http");
-                        //byte[] ret = client1.UploadFile(base_url_insecure + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
                         var ret = client1.UploadFile(base_url + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
-                        //Trace.WriteLine(System.Text.Encoding.ASCII.GetString(ret));
                         Trace.WriteLine(ret);
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/end?realm_id=" + realm_id + "&faction_id=" + faction)));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                        //return 0;
                         Environment.Exit(0);
                         return 0;
                     }

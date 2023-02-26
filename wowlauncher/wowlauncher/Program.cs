@@ -32,8 +32,6 @@ class WoWInstance
 
 public class ScheduleItem
 {
-//    realmId = scheduleItem.realm_id;
-//    factionId = scheduleItem.faction_id;
     public int realm_id { get; set; }
     public string faction_id { get; set; }
 }
@@ -106,37 +104,78 @@ namespace wowlauncher
     {
         static HttpClient client;
 
-
+        // Perform blocking http Get using async methods
         public static string Get(string uri)
         {
-            var result = client.GetAsync(uri);
-            result.Wait();
-            result.Result.EnsureSuccessStatusCode();
-            var response = result.Result;
-            var responseTask = response.Content.ReadAsStringAsync();
-            responseTask.Wait();
-            result.Dispose();
-            var returnValue = responseTask.Result;
-            responseTask.Dispose();
+            // Initialise return value
+            string returnValue;
+            // Perform get action
+            using (var responseTask = client.GetAsync(uri))
+            {
+                // Wait for response, and ensure there wasn't an error
+                responseTask.Wait();
+                responseTask.Result.EnsureSuccessStatusCode();
+
+                // Get response string
+                var response = responseTask.Result;
+                using (var resultTask = response.Content.ReadAsStringAsync())
+                {
+                    resultTask.Wait();
+
+                    // Set return value to response string
+                    returnValue = resultTask.Result;
+                }
+            }
+
             return returnValue;
         }
-        
+
+        public static FileStream SetLockFile(int realmId, string factionId)
+        {
+            var fileName = Directory.GetCurrentDirectory() + $"\\{realmId}-{factionId}.LCK";
+            FileStream result;
+
+            try
+            {
+                // If the file exists, try to delete. It won't let us if really open
+                if (File.Exists(fileName))
+                    File.Delete(fileName);
+
+                // Else create the file with full locking, this will fail if someone already did the same
+                result = File.Open(fileName, FileMode.Create, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch
+            {
+                // Any error, return null (we don't have lock)
+                return null;
+            }
+
+            // Else return the stream to enable unlocking later
+            return result;
+        }
+
+        public static void ClearLockFile(FileStream fs)
+        {
+            var fileName = fs.Name;
+            fs.Close();
+            File.Delete(fileName);
+        }
+
         static void Main(string[] args)
         {
-            // Relax certificate check (TLS won't always be accepted)
-            /*ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate(object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
-            {
-                return true;
-            });*/
-
+            // Create client handler to accept and decompress GZip and Deflate compressed data
             HttpClientHandler handler = new HttpClientHandler();
             handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+
+            // Initialize client
             client = new HttpClient(handler);
 
+            // Set linux flag depending on command line
             bool linux = false;
 
             if (args.Length > 0)
                 linux = (args[0] == "1");
+
 
             ArrayList processData = new ArrayList();
             dynamic realms;
@@ -196,26 +235,22 @@ namespace wowlauncher
                 var factionId = "";
                 var scheduleJson = JsonConvert.DeserializeObject<IEnumerable<ScheduleItem>>(scheduleResponse);
 
-                // Search for any running wow
-                /*if (scheduleJson.Count > 0)
-                {
-                    //var processes = Process.GetProcessesByName("wowclean.exe");
-                    var processes = Process.GetProcesses().Where(row => row.ProcessName.ToLower().Contains("warcraft"));
-                    foreach (var process in processes)
-                    {
-                        Console.WriteLine($"Killing existing {process.ProcessName} process with id {process.Id}");
-                        process.Kill();
-                        if (!process.WaitForExit(5000))
-                            Console.WriteLine(" -- Failed!");
-
-                        process.Dispose();
-                    }
-                }*/
-
                 foreach (var scheduleItem in scheduleJson)
                 {
                     realmId = scheduleItem.realm_id.ToString();
                     factionId = scheduleItem.faction_id;
+
+                    // Try to get a lock for this realm/faction
+                    var lockFile = SetLockFile(scheduleItem.realm_id, factionId);
+
+                    // If we couldn't get a lock, move to next entry
+                    if (lockFile == null)
+                    {
+                        Console.WriteLine($"Realm {realmId} for faction {factionId} locked by another process, skipping.");
+                        continue;
+                    }
+
+                    // Try to get a lock file for this realm/faction (in case of multi launchers)                    
                     var realmConfigUrl = baseUrl + queryUrl + "?&id=" + realmId + "&f=" + factionId;
                     try
                     {
@@ -286,10 +321,9 @@ namespace wowlauncher
                                 wowdata.WowProcess.Kill();
                                 wowdata.WowProcess.WaitForExit();
                             }
+                            ClearLockFile(lockFile);
                             processData.Remove(wowdata);
                             wowdata.WowProcess.Dispose();
-
-                            //System.Threading.Thread.Sleep(60000);
                         }
                     }
                     catch (WebException e) 
@@ -297,6 +331,7 @@ namespace wowlauncher
                         Console.WriteLine(e.Message);
                     }
                 }
+
                 while (processData.Count > 0)
                 {
                     for (var i = 0; i < processData.Count; i++)
