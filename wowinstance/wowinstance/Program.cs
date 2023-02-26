@@ -12,6 +12,8 @@ using System.Drawing;
 using System.Net;
 using WindowsInput.Native;
 using System.Security.Cryptography.X509Certificates;
+using System.Net.Http;
+using System.ComponentModel;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct POINT
@@ -31,15 +33,48 @@ public struct Rect
     public int Right { get; set; }
     public int Bottom { get; set; }
 }
-public class WebClientEx : WebClient
+public class HttpClientEx : HttpClient
 {
-    public int Timeout { get; set; }
-
-    protected override WebRequest GetWebRequest(Uri address)
+    //public int Timeout { get; set; }
+    
+    public HttpResponseMessage Get(Uri address)
     {
-        var request = base.GetWebRequest(address);
-        request.Timeout = Timeout;
-        return request;
+        var responseTask = base.GetAsync(address);
+        responseTask.Wait(((int)Timeout.TotalMilliseconds));
+        responseTask.Result.EnsureSuccessStatusCode();
+        var result = responseTask.Result;
+        return result;
+    }
+
+    public async Task<string> DownloadString(Uri address)
+    {
+        var response = Get(address);
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    public string UploadFile(string address, string fileName)
+    {
+        FileInfo fileInfo = new FileInfo(fileName);
+        var fileStream = new FileStream(fileName, FileMode.Open);
+        var uploadRequest = new HttpRequestMessage(HttpMethod.Post, address);
+        HttpContent webContent = new MultipartFormDataContent
+        {
+            {new StreamContent(fileStream), "file", fileInfo.Name }
+        };
+
+        uploadRequest.Content = webContent;
+        string responseText;
+        using (var webResponse = base.Send(uploadRequest))
+        {
+            // Check response was successful
+            if (!webResponse.IsSuccessStatusCode)
+                return null;
+
+            // Extract response as text
+            using var resp = new StreamReader(webResponse.Content.ReadAsStream());
+            responseText = resp.ReadToEnd();
+        }
+        return responseText;
     }
 }
 namespace wowinstance
@@ -405,9 +440,11 @@ namespace wowinstance
                 SetupRealm(realm_name, realm_url);
                 if (p.Start())
                 {
-                    WebClientEx status_client = new WebClientEx();
-                    status_client.Timeout = 6000;
+                    HttpClientEx status_client = new HttpClientEx();
+                    status_client.Timeout = TimeSpan.FromSeconds(60);
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                     status_client.DownloadString(new Uri((base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction)));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                     System.Threading.Thread.Sleep(waitTime);
 
                     IntPtr wnd;
@@ -439,7 +476,9 @@ namespace wowinstance
                     {
                         Trace.WriteLine(getDT() + "Not at char select window");
                         p.Kill();
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+at+char+select+window")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         //Console.ReadKey();
                         p.WaitForExit();
                         p.Dispose();
@@ -456,7 +495,9 @@ namespace wowinstance
                     {
                         Trace.WriteLine(getDT() + "Not in game");
                         p.Kill();
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Not+in+game")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         //Console.ReadKey();
                         p.WaitForExit();
                         p.Dispose();
@@ -495,7 +536,9 @@ namespace wowinstance
                     {
                         Trace.WriteLine(getDT() + "Auction house not opened");
                         p.Kill();
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=auction+house+not+opened")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         p.WaitForExit();
                         p.Dispose();
                         Environment.Exit(2);
@@ -561,7 +604,9 @@ namespace wowinstance
                             Trace.WriteLine(getDT() + "We are not ingame any more , mostly restart or crash");
                             if (failcount >= 3)
                             {
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+in+game+anymore+mostly+crash+or+restart")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 p.Kill();
                                 p.WaitForExit();
                                 p.Dispose();
@@ -621,7 +666,9 @@ namespace wowinstance
                             if ((DateTime.Now.ToUniversalTime()-p.StartTime.ToUniversalTime()).TotalSeconds > 60 * 60)
                             {
                                 Trace.WriteLine(getDT() + "Client has been running too long, must be stuck. Killing it.");
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=timed+out+in+auction+screen")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 p.Kill();
                                 p.WaitForExit();
                             }
@@ -629,7 +676,9 @@ namespace wowinstance
                             // Screenshot
                             sendKeys(wnd, (int)VirtualKeyCode.OEM_4);
 
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                             status_client.DownloadString(new Uri((base_url + "scheduler/ping?realm_id=" + realm_id + "&faction_id=" + faction)));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                             Trace.WriteLine(getDT() + "Time to wake up");
                             //SetForegroundWindow(p.MainWindowHandle);
                             if (myswitch)
@@ -664,21 +713,27 @@ namespace wowinstance
                     if (File.Exists(current_path))
                     {
                         Trace.WriteLine(getDT() + "Uploading file");
-                        WebClientEx client1 = new WebClientEx();
-                        client1.Timeout = 600000;
+                        HttpClientEx client1 = new HttpClientEx();
+                        client1.Timeout = TimeSpan.FromMinutes(10);
                         string myfile1 = @current_path;
-                        var base_url_insecure = base_url.Replace("https", "http");
-                        byte[] ret = client1.UploadFile(base_url_insecure + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
-                        //byte[] ret = client1.UploadFile(base_url + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
-                        Trace.WriteLine(System.Text.Encoding.ASCII.GetString(ret));
+                        //client1.Credentials = CredentialCache.DefaultCredentials;
+                        //var base_url_insecure = base_url.Replace("https", "http");
+                        //byte[] ret = client1.UploadFile(base_url_insecure + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
+                        var ret = client1.UploadFile(base_url + "private-api/takefile?id=" + realm_id + "&faction=" + faction, myfile1);
+                        //Trace.WriteLine(System.Text.Encoding.ASCII.GetString(ret));
+                        Trace.WriteLine(ret);
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/end?realm_id=" + realm_id + "&faction_id=" + faction)));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         //return 0;
                         Environment.Exit(0);
                         return 0;
                     }
                     else
                     {
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Failed+to+upload+file")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         Environment.Exit(2);
                         return 2;
                     }

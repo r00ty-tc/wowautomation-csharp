@@ -11,6 +11,10 @@ using Newtonsoft.Json;
 using System.Diagnostics;
 using System.Collections;
 using System.Security.Cryptography.X509Certificates;
+using System.Net.Http;
+using System.Dynamic;
+using System.Runtime.CompilerServices;
+using System.Reflection.Metadata;
 
 class WoWInstance
 {
@@ -25,6 +29,34 @@ class WoWInstance
     public string ConnectionUrl;
     public Process WowProcess;
 }
+
+public class ScheduleItem
+{
+//    realmId = scheduleItem.realm_id;
+//    factionId = scheduleItem.faction_id;
+    public int realm_id { get; set; }
+    public string faction_id { get; set; }
+}
+
+public class RealmConfigItem
+{
+    public int id { get; set;}
+    public string expansion { get; set; }
+    public string name { get; set; }
+    public string connection_url { get; set; }
+    public string faction { get; set; }
+    public RealmConfigDataItem data { get; set; }
+
+}
+
+public class RealmConfigDataItem
+{
+    public string username { get; set; }
+    public string password { get; set; }
+    public string auctioneer { get; set; }
+    public string keybind { get; set; }
+}
+
 namespace wowlauncher
 {
     class IniFile   // revision 11
@@ -72,28 +104,34 @@ namespace wowlauncher
     }
     class Program
     {
-        
+        static HttpClient client;
 
-        public string Get(string uri)
+
+        public static string Get(string uri)
         {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(uri);
-            request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
-
-            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-            using (Stream stream = response.GetResponseStream())
-            using (StreamReader reader = new StreamReader(stream))
-            {
-                return reader.ReadToEnd();
-            }
+            var result = client.GetAsync(uri);
+            result.Wait();
+            result.Result.EnsureSuccessStatusCode();
+            var response = result.Result;
+            var responseTask = response.Content.ReadAsStringAsync();
+            responseTask.Wait();
+            result.Dispose();
+            var returnValue = responseTask.Result;
+            responseTask.Dispose();
+            return returnValue;
         }
         
         static void Main(string[] args)
         {
             // Relax certificate check (TLS won't always be accepted)
-            ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate(object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
+            /*ServicePointManager.ServerCertificateValidationCallback += new System.Net.Security.RemoteCertificateValidationCallback(delegate(object sender, X509Certificate cert, X509Chain chain, System.Net.Security.SslPolicyErrors error)
             {
                 return true;
-            });
+            });*/
+
+            HttpClientHandler handler = new HttpClientHandler();
+            handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+            client = new HttpClient(handler);
 
             bool linux = false;
 
@@ -117,6 +155,7 @@ namespace wowlauncher
                     // Get file info for all jpg files in screenshots folder
                     var files = Directory.GetFiles(Directory.GetCurrentDirectory() + "\\Screenshots", "*.jpg").Select(file => new FileInfo(file));
                     Console.WriteLine($"Checking {files.Count()} screenshots for deletion candidates");
+                    int deletedFiles = 0;
 
                     // Loop each file
                     foreach (var file in files)
@@ -135,6 +174,7 @@ namespace wowlauncher
                                 try
                                 {
                                     File.Delete(file.FullName);
+                                    deletedFiles++;
                                 }
                                 catch (Exception ex)
                                 {
@@ -143,6 +183,7 @@ namespace wowlauncher
                             }
                         }
                     }
+                    Console.WriteLine($"Deleted {deletedFiles} screenshot files");
 
                     // Schedule another check in 24 hours
                     nextScreenshotClear = DateTime.Now.AddHours(24);
@@ -150,13 +191,13 @@ namespace wowlauncher
 
                 var startTimeStamp = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
                 var scheduleUrl = baseUrl + "scheduler/index";
-                var scheduleResponse = new WebClient().DownloadString(scheduleUrl);
+                var scheduleResponse = Get(scheduleUrl);
                 var realmId = "";
                 var factionId = "";
-                dynamic scheduleJson = JsonConvert.DeserializeObject(scheduleResponse);
+                var scheduleJson = JsonConvert.DeserializeObject<IEnumerable<ScheduleItem>>(scheduleResponse);
 
                 // Search for any running wow
-                if (scheduleJson.Count > 0)
+                /*if (scheduleJson.Count > 0)
                 {
                     //var processes = Process.GetProcessesByName("wowclean.exe");
                     var processes = Process.GetProcesses().Where(row => row.ProcessName.ToLower().Contains("warcraft"));
@@ -169,21 +210,21 @@ namespace wowlauncher
 
                         process.Dispose();
                     }
-                }
+                }*/
 
-                for (var c = 0; c < scheduleJson.Count; c++)
+                foreach (var scheduleItem in scheduleJson)
                 {
-                    realmId = scheduleJson[c].realm_id;
-                    factionId = scheduleJson[c].faction_id;
+                    realmId = scheduleItem.realm_id.ToString();
+                    factionId = scheduleItem.faction_id;
                     var realmConfigUrl = baseUrl + queryUrl + "?&id=" + realmId + "&f=" + factionId;
                     try
                     {
-                        var realmConfigResponse = new WebClient().DownloadString(realmConfigUrl);
-                        dynamic realmConfigJson = JsonConvert.DeserializeObject(realmConfigResponse);
+                        var realmConfigResponse = Get(realmConfigUrl);
+                        var realmConfigJson = JsonConvert.DeserializeObject<IEnumerable<RealmConfigItem>>(realmConfigResponse);
                         realms = realmConfigJson;
-                        for (var i = 0; i < realmConfigJson.Count; i++)
+                        foreach (var realmConfig in realmConfigJson)
                         {
-                            var expac = realmConfigJson[i].expansion;
+                            var expac = realmConfig.expansion;
                             var wowPath = wowPathWotlk;
                             if (expac == "3.3.5")
                                 wowPath = wowPathWotlk;
@@ -194,14 +235,14 @@ namespace wowlauncher
                             wowdata.WowProcess = new Process();
                             wowdata.WowProcess.StartInfo.FileName = wowPath + "wowinstance.exe";
                             wowdata.WowProcess.StartInfo.WorkingDirectory = wowPath;
-                            wowdata.RealmName = realmConfigJson[i].name;
-                            wowdata.ConnectionUrl = realmConfigJson[i].connection_url;
-                            wowdata.RealmId = realmConfigJson[i].id;
+                            wowdata.RealmName = realmConfig.name;
+                            wowdata.ConnectionUrl = realmConfig.connection_url;
+                            wowdata.RealmId = realmConfig.id;
 
-                            wowdata.AccountName = realmConfigJson[i].data.username;
-                            wowdata.AuctioneerName = realmConfigJson[i].data.auctioneer;
-                            wowdata.Faction = realmConfigJson[i].faction;
-                            wowdata.Password = realmConfigJson[i].data.password;
+                            wowdata.AccountName = realmConfig.data.username;
+                            wowdata.AuctioneerName = realmConfig.data.auctioneer;
+                            wowdata.Faction = realmConfig.faction;
+                            wowdata.Password = realmConfig.data.password;
                             string auctionData = wowPath + "WTF\\Account\\" + wowdata.AccountName.ToUpper() + "\\SavedVariables\\Auc-ScanData.lua";
                             if (File.Exists(auctionData))
                             {
@@ -219,7 +260,7 @@ namespace wowlauncher
                             Console.WriteLine("Start ..." + wowdata.WowProcess.StartInfo.Arguments);
                             if (wowdata.WowProcess.Start())
                             {
-                                Console.WriteLine("Process for realm id " + realmConfigJson[i].id);
+                                Console.WriteLine("Process for realm id " + realmConfig.id);
                                 processData.Add(wowdata);
                             }
 

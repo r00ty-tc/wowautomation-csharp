@@ -7,3 +7,6 @@ wowlauncher/.vs
 /wowlauncher/packages
 /wowlauncher/wowlauncher/obj
 /wowlauncher/wowlauncher/bin
+/wowinstance/artifacts
+/wowlauncher/artifacts
+/build.bat
