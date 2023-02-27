@@ -172,9 +172,17 @@ namespace wowlauncher
 
             // Set linux flag depending on command line
             bool linux = false;
+            string[] limitRealms = null;
+            string limitFaction = "";
 
             if (args.Length > 0)
                 linux = (args[0] == "1");
+
+            if (args.Length > 1)
+                limitFaction = args[1].ToLower();
+
+            if (args.Length > 2)
+                limitRealms = args[2].Split(",");
 
 
             ArrayList processData = new ArrayList();
@@ -185,6 +193,12 @@ namespace wowlauncher
             var queryUrl = ini.Read("query_url", "config");
             var wowPathWotlk = ini.Read("wow_path_wotlk", "config");
             var wowPathTbc = ini.Read("wow_path_tbc", "config");
+            if (!int.TryParse(ini.Read("wow_timeout", "config"), out int wowTimeout) || wowTimeout == 0)
+                wowTimeout = 120;
+
+            // Add some time for wowinstance to finish before we force its hand
+            wowTimeout += 10;
+
             var nextScreenshotClear = DateTime.UtcNow;
             while (true) // loop always
             {
@@ -240,6 +254,12 @@ namespace wowlauncher
                     realmId = scheduleItem.realm_id.ToString();
                     factionId = scheduleItem.faction_id;
 
+                    if (!string.IsNullOrWhiteSpace(limitFaction) && limitFaction != factionId)
+                        continue;
+
+                    if (limitRealms != null && limitRealms.Any() && !limitRealms.Contains(realmId))
+                        continue;
+
                     // Try to get a lock for this realm/faction
                     var lockFile = SetLockFile(scheduleItem.realm_id, factionId);
 
@@ -288,7 +308,8 @@ namespace wowlauncher
                                 wowdata.LastModifiedDate = 0;
                                 wowdata.Size = 0;
                             }
-                            wowdata.WowProcess.StartInfo.Arguments = wowdata.RealmId + " \"" + wowdata.RealmName + "\" \"" + wowdata.ConnectionUrl + "\" " + wowdata.AccountName + " \"" + wowdata.Password + "\" \"" + wowdata.AuctioneerName + "\" \"" + baseUrl + "\" " + wowdata.Faction;
+                            wowdata.WowProcess.StartInfo.Arguments = wowdata.RealmId + " \"" + wowdata.RealmName + "\" \"" + wowdata.ConnectionUrl + "\" " + wowdata.AccountName + " \"";
+                            wowdata.WowProcess.StartInfo.Arguments += wowdata.Password + "\" \"" + wowdata.AuctioneerName + "\" \"" + baseUrl + "\" " + wowdata.Faction + " " + wowTimeout.ToString();
                             if (linux)
                                 wowdata.WowProcess.StartInfo.Arguments += " 1";
 
@@ -300,7 +321,7 @@ namespace wowlauncher
                             }
 
                             // Wait for process to exit or kill after 2 hours
-                            if (wowdata.WowProcess.WaitForExit(65 * 60 * 1000))     // Wait just over 1 hour
+                            if (wowdata.WowProcess.WaitForExit(wowTimeout * 60 * 1000))     // Wait just over 1 hour
                             {
                                 if (wowdata.WowProcess.ExitCode == 0) // everything OK
                                 {

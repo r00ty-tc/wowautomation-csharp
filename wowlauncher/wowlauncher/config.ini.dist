@@ -1,0 +1,6 @@
+[config]
+base_url=https://uri.of.website
+query_url=private-api/getrealmdata
+wow_path_wotlk=C:\Path\To\Wow3.3.5
+wow_path_tbc=C:\Path\To\Wow2.4.3\Not\Really\Tested
+wow_timeout=120
