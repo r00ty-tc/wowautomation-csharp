@@ -9,11 +9,13 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Net;
 using WindowsInput.Native;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Http;
 using System.ComponentModel;
+using System.Reflection.Metadata;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct POINT
@@ -26,12 +28,14 @@ public struct POINT
         return new Point(point.X, point.Y);
     }
 }
+
+[StructLayout(LayoutKind.Sequential)]
 public struct Rect
 {
-    public int Left { get; set; }
-    public int Top { get; set; }
-    public int Right { get; set; }
-    public int Bottom { get; set; }
+    public int Left;
+    public int Top;
+    public int Right;
+    public int Bottom;
 }
 public class HttpClientEx : HttpClient
 {
@@ -90,6 +94,10 @@ namespace wowinstance
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindowThreadProcessId(IntPtr window, out int process);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindowRect(IntPtr hWnd, ref global::Rect rect);
+
         public static bool InLinux()
         {
             string path = Directory.GetCurrentDirectory();
@@ -99,6 +107,28 @@ namespace wowinstance
             }
             return false;
         }
+
+        public static void SaveScreenshot(IntPtr wnd, string fileName = null)
+        {
+            if (!OperatingSystem.IsWindows())
+                return;
+
+            if (fileName == null)
+                fileName = $"{Directory.GetCurrentDirectory()}\\Screenshots\\WoWScrnShot_{DateTime.Now.ToString("MMddyy_HHmmss")}.png";
+
+            var rect = new global::Rect();
+            GetWindowRect(wnd, ref rect);
+            var bounds = new Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+            using (var result = new Bitmap(bounds.Width, bounds.Height))
+            {
+                using (var graphics = Graphics.FromImage(result))
+                {
+                    graphics.CopyFromScreen(new Point(bounds.Left, bounds.Top), Point.Empty, bounds.Size);
+                }
+                result.Save(fileName, ImageFormat.Png);
+            }
+        }
+
         public static string getDT()
         {
             DateTime dt = DateTime.UtcNow;
@@ -212,24 +242,12 @@ namespace wowinstance
             { { 166,19,0x4c4c4c },{ 166,19,0x4b4c4b } },
 
         };
-        [StructLayout(LayoutKind.Sequential)]
-        public struct RECT
-        {
-            public int Left;        // x position of upper-left corner
-            public int Top;         // y position of upper-left corner
-            public int Right;       // x position of lower-right corner
-            public int Bottom;      // y position of lower-right corner
-        }
-        RECT r = new RECT();
 
         [DllImport("user32.dll", EntryPoint = "SetCursorPos")]
         static extern bool SetCursorPosition(int x, int y);
 
         [DllImport("user32.dll")]
         static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        public static extern bool GetWindowRect(IntPtr hwnd, out RECT rectangle);
 
         [DllImport("user32.dll")]
         static extern IntPtr GetDC(IntPtr hwnd);
@@ -373,9 +391,12 @@ namespace wowinstance
                 string auctioneer = args[5];
                 string base_url = args[6];
                 string faction = args[7];
+                if (!int.TryParse(args[8], out int wowTimeout))
+                    wowTimeout = 120;
+
                 int factionIdx = (faction == "a") ? 1 : 0;
                 linux = false;
-                if (args.Count() > 8 && args[8] == "1")
+                if (args.Count() > 9 && args[9] == "1")
                 {
                     linux = true;
                     waitTime = 30000;
@@ -408,11 +429,11 @@ namespace wowinstance
                 Trace.WriteLine(getDT() + args[7]);
 
                 // Get linux flag
-                if (args.Count() > 8 && args[8] == "1")
-                    Trace.WriteLine(getDT() + args[8] + " / " + linux.ToString());
+                if (args.Count() > 9 && args[9] == "1")
+                    Trace.WriteLine(getDT() + args[9] + " / " + linux.ToString());
 
                 // Get debug flag
-                debug = args.Count() > 9 && args[9] == "1";
+                debug = args.Count() > 10 && args[10] == "1";
 
                 string exename = InLinux() ? "wine" : "wowclean.exe";
                 if (File.Exists("wowtbc.exe"))
@@ -466,6 +487,7 @@ namespace wowinstance
                     if (!WaitForPixel(wnd, 1, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Not at char select window");
+                        SaveScreenshot(wnd);
                         p.Kill();
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+at+char+select+window")));
@@ -485,6 +507,7 @@ namespace wowinstance
                     if (!WaitForPixel(wnd, 2, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Not in game");
+                        SaveScreenshot(wnd);
                         p.Kill();
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=Not+in+game")));
@@ -516,8 +539,8 @@ namespace wowinstance
                     }
                     else if (expac_mode == EXPAC_TBC)
                     {
-                        RECT r = new RECT();
-                        GetWindowRect((IntPtr)wnd, out r);
+                        Rect r = new Rect();
+                        GetWindowRect((IntPtr)wnd, ref r);
                         SetForegroundWindow(wnd);
                         SetCursorPosition(r.Left + ((r.Right - r.Left) / 2), r.Top + ((r.Bottom - r.Top) / 2));
                         rightclick(wnd, 0, 0);
@@ -526,6 +549,7 @@ namespace wowinstance
                     if (!WaitForPixel(wnd, 3, factionIdx))
                     {
                         Trace.WriteLine(getDT() + "Auction house not opened");
+                        SaveScreenshot(wnd);
                         p.Kill();
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                         status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=auction+house+not+opened")));
@@ -557,6 +581,7 @@ namespace wowinstance
                     while (!WaitForPixel(wnd, 4, factionIdx, 5) && maxtries > 0)
                     {
                         // If not, keep trying to initiate scan
+                        SaveScreenshot(wnd);
                         Trace.WriteLine("Retrying auction scan");
                         System.Threading.Thread.Sleep(1000);
                         sendKeys(wnd, (int)VirtualKeyCode.RETURN);
@@ -595,6 +620,7 @@ namespace wowinstance
                             Trace.WriteLine(getDT() + "We are not ingame any more , mostly restart or crash");
                             if (failcount >= 3)
                             {
+                                SaveScreenshot(wnd);
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+in+game+anymore+mostly+crash+or+restart")));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
@@ -631,8 +657,8 @@ namespace wowinstance
                             }
                             else if (expac_mode == EXPAC_TBC)
                             {
-                                RECT r = new RECT();
-                                GetWindowRect((IntPtr)wnd, out r);
+                                Rect r = new Rect();
+                                GetWindowRect((IntPtr)wnd, ref r);
                                 SetForegroundWindow(wnd);
                                 SetCursorPosition(r.Left + ((r.Right - r.Left) / 2), r.Top + ((r.Bottom - r.Top) / 2));
                                 rightclick(wnd, 0, 0);
@@ -654,8 +680,9 @@ namespace wowinstance
                         System.Threading.Thread.Sleep(1000);
                         if (counter >= timeout)
                         {
-                            if ((DateTime.Now.ToUniversalTime()-p.StartTime.ToUniversalTime()).TotalSeconds > 60 * 60)
+                            if ((DateTime.Now.ToUniversalTime()-p.StartTime.ToUniversalTime()).TotalSeconds > wowTimeout * 60)
                             {
+                                SaveScreenshot(wnd);
                                 Trace.WriteLine(getDT() + "Client has been running too long, must be stuck. Killing it.");
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=timed+out+in+auction+screen")));
