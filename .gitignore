@@ -10,3 +10,7 @@ wowlauncher/.vs
 /wowinstance/artifacts
 /wowlauncher/artifacts
 /build.bat
+/wowinstance/wowinstance/Properties/launchSettings.json
+/wowlauncher/wowlauncher/Properties/launchSettings.json
+/wowinstance/wowinstance/wowinstance.csproj.user
+/wowlauncher/wowlauncher/wowlauncher.csproj.user

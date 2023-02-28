@@ -178,7 +178,7 @@ namespace wowlauncher
             if (args.Length > 0)
                 linux = (args[0] == "1");
 
-            if (args.Length > 1)
+            if (args.Length > 1 && args[1].ToLower() == "a" || args[1].ToLower() == "h")
                 limitFaction = args[1].ToLower();
 
             if (args.Length > 2)
