@@ -201,6 +201,8 @@ namespace wowinstance
             { { 171,440,0x0 },{171,440,0x0 } },
             // scanning     4
             { { 166,19,0x4c4c4c },{ 166,19,0x4c4c4c } },
+            // Processing   5
+            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
         };
 
         static private int[,,] colors_pixels_linux={
@@ -214,6 +216,8 @@ namespace wowinstance
             { { 225,17,0x000062 },{ 225,17,0x000062 } },
             // scanning     4
             { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
+            // Processing   5
+            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
         };
 
         static private int[,,] colors_pixels_linux_alt ={
@@ -227,6 +231,8 @@ namespace wowinstance
             { { 225,17,0x000063 },{ 225,17,0x000063 } },
             // scanning     4
             { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
+            // Processing   5
+            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
         };
 
         static private int[,,] colors_pixels = { 
@@ -239,7 +245,9 @@ namespace wowinstance
             //auction house 3
             { { 225,17,0x000063 },{ 225,17,0x000063 } },
             // scanning     4
-            { { 166,19,0x4c4c4c },{ 166,19,0x4b4c4b } },
+            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
+            // Processing   5
+            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
 
         };
 
@@ -340,7 +348,7 @@ namespace wowinstance
             uint col = GetPixelColor(wnd, x, y);
 
             if (debug)
-                Trace.WriteLine("Testing pixel against " + col + " " + color + (altColor != 0 ? " / " + altColor : ""));
+                Trace.WriteLine($"Testing index {index} pixel at {x},{y} against {col} with {color}{(altColor != 0 ? " / " + altColor : "")}");
 
             if (col == color || col == altColor)
                 return true;
@@ -604,6 +612,7 @@ namespace wowinstance
                     int timeout = rand.Next(240, 300);
                     int counter = 0;
                     int failcount = 0;
+                    bool scanning = false;
                     while (!p.HasExited)
                     {
                         /*POINT pp;
@@ -615,12 +624,21 @@ namespace wowinstance
                         uint pixel = GetPixelColor(p.MainWindowHandle, x, y);
                         Console.Write("{0:X} [" + x + "," + y + "] \n", pixel);
                         */
-                        if (!TestPixel(wnd, 2, factionIdx) && (counter % 10) == 0)
+
+                        // Check if scanning is in processing phase (getall scan available, play button not)
+                        // I think icecrown times out here sometimes and is killed before saving
+                        if (!scanning && TestPixel(wnd, 5, factionIdx) && TestPixel(wnd, 4, factionIdx))
                         {
+                            scanning = true;
+                            Trace.WriteLine(getDT() + "Scan complete, now processing");
+                        }
+
+                        if (!scanning && !TestPixel(wnd, 2, factionIdx) && (counter % 10) == 0)
+                        {
+                            SaveScreenshot(wnd);
                             Trace.WriteLine(getDT() + "We are not ingame any more , mostly restart or crash");
                             if (failcount >= 3)
                             {
-                                SaveScreenshot(wnd);
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                                 status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+in+game+anymore+mostly+crash+or+restart")));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
@@ -636,7 +654,7 @@ namespace wowinstance
                             }
 
                         }
-                        if (!TestPixel(wnd, 3, factionIdx) && (counter % 10) == 0)
+                        if (!scanning && !TestPixel(wnd, 3, factionIdx) && (counter % 10) == 0)
                         {
                             //SetForegroundWindow(p.MainWindowHandle);
                             Trace.WriteLine(getDT() + "Auction House not opened, trying to reopen and continue");
