@@ -192,7 +192,7 @@ namespace wowinstance
         static extern byte VkKeyScan(char ch);
         static private int[,,] colors_pixels_ws ={
             //title screen  0
-            { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
+            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
             //char select   1
             { { 450,550,0x050d7c },{450,550,0x04046d } },
             //ingame        2
@@ -203,11 +203,15 @@ namespace wowinstance
             { { 166,19,0x4c4c4c },{ 166,19,0x4c4c4c } },
             // Processing   5
             { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
+            // Queue        6
+            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
+            // Queue 2      7
+            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
         };
 
         static private int[,,] colors_pixels_linux={
             //title screen  0
-            { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
+            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
             //char select   1
             { { 450,550,0x050d7b },{ 450,550,0x070671 } },
             //ingame        2
@@ -218,11 +222,15 @@ namespace wowinstance
             { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
             // Processing   5
             { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
+            // Queue        6
+            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
+            // Queue 2      7
+            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
         };
 
         static private int[,,] colors_pixels_linux_alt ={
             //title screen  0
-            { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
+            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
             //char select   1
             { { 450,550,0x050d7b },{ 450,550,0x070671 } },
             //ingame        2
@@ -233,11 +241,15 @@ namespace wowinstance
             { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
             // Processing   5
             { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
+            // Queue        6
+            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
+            // Queue 2      7
+            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
         };
 
         static private int[,,] colors_pixels = { 
             //title screen  0
-            { { 126, 690, 0 }, { 29, 702, 0xFFFBFF } },
+            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
             //char select   1
             { { 450,550,0x050d7c },{ 450,550,0x070672 } },
             //ingame        2
@@ -248,6 +260,10 @@ namespace wowinstance
             { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
             // Processing   5
             { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
+            // Queue        6
+            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
+            // Queue 2      7
+            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
 
         };
 
@@ -465,10 +481,10 @@ namespace wowinstance
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                     status_client.DownloadString(new Uri((base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction)));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
-                    System.Threading.Thread.Sleep(waitTime);
-
+                    //System.Threading.Thread.Sleep(waitTime);
                     IntPtr wnd;
 
+                    System.Threading.Thread.Sleep(10000);
                     if (p.MainWindowHandle == IntPtr.Zero)
                     {
                         p.Refresh();
@@ -477,6 +493,26 @@ namespace wowinstance
                     }
                     else
                         wnd = p.MainWindowHandle;
+
+                    // Wait for login screen
+                    if (!WaitForPixel(wnd, 0, factionIdx))
+                    {
+                        Trace.WriteLine(getDT() + "Never reached login screen");
+                        SaveScreenshot(wnd);
+                        p.Kill();
+#pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                        status_client.DownloadString(new Uri((base_url + "scheduler/fail?realm_id=" + realm_id + "&faction_id=" + faction + "&reason=not+at+login+screen")));
+#pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
+                        //Console.ReadKey();
+                        p.WaitForExit();
+                        p.Dispose();
+                        Environment.Exit(2);
+                        return 2;
+                    }
+
+                    // Wait a second before logging in
+                    Trace.WriteLine(getDT() + "Reached login screen");
+                    System.Threading.Thread.Sleep(1000);
 
                     //SetForegroundWindow(p.MainWindowHandle);
                     sendChars(wnd, accountname);
@@ -492,7 +528,26 @@ namespace wowinstance
                     //System.Threading.Thread.Sleep(waitTime);
                     System.Threading.Thread.Sleep(2000);
                     //SetForegroundWindow(p.MainWindowHandle);
-                    if (!WaitForPixel(wnd, 1, factionIdx))
+
+                    // By default wait 1 minute at character select
+                    int charSelectWait = 60;
+
+                    // Make a short wait (5 seconds) to see if we're in a queue
+                    if (WaitForPixel(wnd, 7, factionIdx, 5))
+                    {
+                        Console.WriteLine(getDT() + "We're in a queue, we'll wait a maximum of 15 minures for character select");
+                        SaveScreenshot(wnd);
+                        charSelectWait = 15 * 60;
+                    }
+                    // Make a short wait (15 seconds) to see if we're in a queue (look for the bigger queue window)
+                    else if (WaitForPixel(wnd, 6, factionIdx, 15))
+                    {
+                        Console.WriteLine(getDT() + "We're in a queue, we'll wait a maximum of 15 minures for character select");
+                        SaveScreenshot(wnd);
+                        charSelectWait = 15 * 60;
+                    }
+
+                    if (!WaitForPixel(wnd, 1, factionIdx, charSelectWait))
                     {
                         Trace.WriteLine(getDT() + "Not at char select window");
                         SaveScreenshot(wnd);
@@ -506,7 +561,7 @@ namespace wowinstance
                         Environment.Exit(2);
                         return 2;
                     }
-                    Trace.WriteLine("Passing char select screen");
+                    Trace.WriteLine(getDT() + "Passing char select screen");
                     System.Threading.Thread.Sleep(2000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
@@ -526,7 +581,7 @@ namespace wowinstance
                         Environment.Exit(2);
                         return 2;
                     }
-                    Trace.WriteLine("In game");
+                    Trace.WriteLine(getDT() + "In game");
                     System.Threading.Thread.Sleep(2000);
                     var start_url = base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction;
 
@@ -567,7 +622,7 @@ namespace wowinstance
                         Environment.Exit(2);
                         return 2;
                     }
-                    Trace.WriteLine("Auction house opened");
+                    Trace.WriteLine(getDT() + "Auction house opened");
                     System.Threading.Thread.Sleep(5000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     System.Threading.Thread.Sleep(100);
@@ -590,7 +645,7 @@ namespace wowinstance
                     {
                         // If not, keep trying to initiate scan
                         SaveScreenshot(wnd);
-                        Trace.WriteLine("Retrying auction scan");
+                        Trace.WriteLine(getDT() + "Retrying auction scan");
                         System.Threading.Thread.Sleep(1000);
                         sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                         System.Threading.Thread.Sleep(100);
@@ -605,7 +660,7 @@ namespace wowinstance
                         sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                         maxtries--;
                     }
-                    Trace.WriteLine("Auction scan started");
+                    Trace.WriteLine(getDT() + "Auction scan started");
 
                     bool myswitch = false;
                     Random rand = new System.Random();
@@ -613,7 +668,7 @@ namespace wowinstance
                     int counter = 0;
                     int failcount = 0;
                     bool scanning = false;
-                    while (!p.HasExited)
+                    while (p.Responding && !p.HasExited)
                     {
                         /*POINT pp;
                         GetCursorPos(out pp);
@@ -625,10 +680,21 @@ namespace wowinstance
                         Console.Write("{0:X} [" + x + "," + y + "] \n", pixel);
                         */
 
+                        if (!p.Responding)
+                        {
+                            Trace.WriteLine(getDT() + "Warcraft process stopped responding");
+                            p.Kill();
+                            p.WaitForExit();
+                            p.Dispose();
+                            Environment.Exit(3);
+                            return 3;
+                        }
+
                         // Check if scanning is in processing phase (getall scan available, play button not)
                         // I think icecrown times out here sometimes and is killed before saving
                         if (!scanning && TestPixel(wnd, 5, factionIdx) && TestPixel(wnd, 4, factionIdx))
                         {
+                            SaveScreenshot(wnd);
                             scanning = true;
                             Trace.WriteLine(getDT() + "Scan complete, now processing");
                         }
