@@ -16,6 +16,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Net.Http;
 using System.ComponentModel;
 using System.Reflection.Metadata;
+using System.Reflection;
 
 [StructLayout(LayoutKind.Sequential)]
 public struct POINT
@@ -81,13 +82,150 @@ public class HttpClientEx : HttpClient
 }
 namespace wowinstance
 {
+    public enum PixelIndex
+    {
+        TitleScreen = 0,
+        CharacterSelect = 1,
+        InGame = 2,
+        AuctionHouseOpen = 3,
+        AuctionHouseScanning = 4,
+        AuctionHouseProcessing = 5,
+        LoginInQueueNoEstimate = 6,
+        LoginInQueueEstimate = 7
+    }
+
+    public class PixelScan
+    {
+        [DllImport("user32.dll")]
+        static extern IntPtr GetDC(IntPtr hwnd);
+
+        [DllImport("user32.dll")]
+        static extern Int32 ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        static extern uint GetPixel(IntPtr hdc, int nXPos, int nYPos);
+
+        // Actual properties
+        public Dictionary<PixelIndex, PixelScanData[]> PixelData { get; set; }
+        public bool IsAnd { get; set; }
+
+        public PixelScan(bool isAnd = false)
+        {
+            PixelData = new Dictionary<PixelIndex, PixelScanData[]>();
+            IsAnd = isAnd;
+        }
+
+        public PixelScan(Tuple<PixelIndex, PixelScanData[]>[] pixelData, bool isAnd = false)
+        {
+            PixelData = pixelData.ToDictionary(pixel => pixel.Item1, pixel => pixel.Item2);
+            IsAnd = isAnd;
+        }
+
+        public void Add(PixelIndex index, PixelScanData[] scanData)
+        {
+            PixelData.Add(index, scanData);
+        }
+
+        static public uint GetPixelColor(IntPtr hwnd, int x, int y)
+        {
+            IntPtr hdc = GetDC(hwnd);
+            uint pixel = GetPixel(hdc, x, y);
+
+            ReleaseDC(hwnd, hdc);
+
+            return pixel;
+        }
+
+        // Test a single specified pixel against a list of colours
+        private static bool testSinglePixel(IntPtr wnd, int x, int y, uint[] colours)
+        {
+            var colour = GetPixelColor(wnd, x, y);
+
+            if (Program.debug)
+                Trace.WriteLine(Program.getDT() + $"Testing {x},{y} for the colours ({string.Join(", ", colours.Select(item => "0x" + item.ToString("X6").ToLower()))}) against 0x{colour.ToString("X6").ToLower()}");
+
+            // True if any colour in colours matches
+            return colours.Any(entry => entry == colour);
+        }
+
+        // Test a single pixel against a colour index
+        public bool TestPixel(IntPtr wnd, PixelIndex index)
+        {
+            if (IsAnd)
+                return PixelData[index].All(entry => testSinglePixel(wnd, entry.X, entry.Y, entry.Colours));
+            else
+                return PixelData[index].Any(entry => testSinglePixel(wnd, entry.X, entry.Y, entry.Colours));
+        }
+
+        // Test multiple pixels against multiple colour indexes and return which ones matched
+        public PixelIndex[] TestPixels(IntPtr wnd, PixelIndex[] indexes, bool all = false)
+        {
+            if (all && indexes.All(index => TestPixel(wnd, index)))
+            {
+                return indexes.Where(index => TestPixel(wnd, index)).ToArray();
+            }
+            else if (!all && indexes.Any(index => TestPixel(wnd, index)))
+            {
+                return indexes.Where(index => TestPixel(wnd, index)).ToArray();
+            }
+            else
+                return null;
+        }
+
+        // Wait for a specific pixel to be set to a colour specified by the supplied index
+        // wait for up to maxSecs seconds (1 minute by default)
+        public bool WaitForPixel(IntPtr wnd, PixelIndex index, int maxSecs = 60)
+        {
+            int count = 0;
+            while (!TestPixel(wnd, index))
+            {
+                System.Threading.Thread.Sleep(1000);
+                count++;
+                if (count > maxSecs)
+                    return false;
+            }
+            return true;
+        }
+
+        // Wait for multiple pixels to be set to a colour specified by the supplied indexes
+        // wait for up to maxSecs seconds (1 minute by default), return the indexes matching
+        public PixelIndex[] WaitForPixels(IntPtr wnd, PixelIndex[] indexes, bool all = false, int maxSecs = 60)
+        {
+            int count = 0;
+            while (true)
+            {
+                var result = TestPixels(wnd, indexes, all);
+                if (result != null)
+                    return result;
+
+                System.Threading.Thread.Sleep(1000);
+                count++;
+                if (count > maxSecs)
+                    return null;
+            }
+        }
+    }
+
+    public class PixelScanData
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public uint[] Colours { get; set; }
+        public PixelScanData(int x, int y, uint[] colours)
+        {
+            X = x;
+            Y = y;
+            Colours = colours;
+        }
+    }
+
     class Program
     {
         public static int waitTime = 5000;
 
         public static string folderSeparator => InLinux() ? "/" : "\\";
         private static bool linux;
-        private static bool debug;
+        public static bool debug;
 
         [DllImport("user32.dll")]
         public static extern IntPtr FindWindowEx(IntPtr parentWindow, IntPtr previousChildWindow, string windowClass, string windowTitle);
@@ -134,34 +272,6 @@ namespace wowinstance
             DateTime dt = DateTime.UtcNow;
             return "["+dt.ToLocalTime()+"] ";
         }
-        public static bool InWindowsServer()
-        {
-            string path = Directory.GetCurrentDirectory();
-            if (path.IndexOf("Administrator") != -1)
-            {
-                return true;
-            }
-            return false;
-        }
-        private static IntPtr[] GetProcessWindows(int process)
-        {
-            IntPtr[] apRet = (new IntPtr[256]);
-            int iCount = 0;
-            IntPtr pLast = IntPtr.Zero;
-            do
-            {
-                pLast = FindWindowEx(IntPtr.Zero, pLast, null, null);
-                int iProcess_;
-                GetWindowThreadProcessId(pLast, out iProcess_);
-                if (iProcess_ == process) apRet[iCount++] = pLast;
-            } while (pLast != IntPtr.Zero);
-            System.Array.Resize(ref apRet, iCount);
-            return apRet;
-        }
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam,
-    StringBuilder lParam);
 
         static void sendChars(IntPtr wnd, string str)
         {
@@ -188,84 +298,6 @@ namespace wowinstance
 
         [DllImport("User32.Dll", EntryPoint = "PostMessageA")]
         static extern bool PostMessage(IntPtr hWnd, uint msg, int wParam, int lParam);
-        [DllImport("user32.dll")]
-        static extern byte VkKeyScan(char ch);
-        static private int[,,] colors_pixels_ws ={
-            //title screen  0
-            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
-            //char select   1
-            { { 450,550,0x050d7c },{450,550,0x04046d } },
-            //ingame        2
-            { { 10,705,0x120C0D },{10,705,0x120C0D } },
-            //auction house 3
-            { { 171,440,0x0 },{171,440,0x0 } },
-            // scanning     4
-            { { 166,19,0x4c4c4c },{ 166,19,0x4c4c4c } },
-            // Processing   5
-            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
-            // Queue        6
-            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
-            // Queue 2      7
-            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
-        };
-
-        static private int[,,] colors_pixels_linux={
-            //title screen  0
-            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
-            //char select   1
-            { { 450,550,0x050d7b },{ 450,550,0x070671 } },
-            //ingame        2
-            { { 780,594,0x177cb9 },{ 780,594,0x177cb9 } },
-            //auction house 3
-            { { 225,17,0x000062 },{ 225,17,0x000062 } },
-            // scanning     4
-            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
-            // Processing   5
-            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
-            // Queue        6
-            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
-            // Queue 2      7
-            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
-        };
-
-        static private int[,,] colors_pixels_linux_alt ={
-            //title screen  0
-            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
-            //char select   1
-            { { 450,550,0x050d7b },{ 450,550,0x070671 } },
-            //ingame        2
-            { { 780,594,0x187dba },{ 780,594,0x187dba } },
-            //auction house 3
-            { { 225,17,0x000063 },{ 225,17,0x000063 } },
-            // scanning     4
-            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
-            // Processing   5
-            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
-            // Queue        6
-            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
-            // Queue 2      7
-            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
-        };
-
-        static private int[,,] colors_pixels = { 
-            //title screen  0
-            { { 430, 450, 0x8a5418 }, { 430, 450, 0x8a5418 } },
-            //char select   1
-            { { 450,550,0x050d7c },{ 450,550,0x070672 } },
-            //ingame        2
-            { { 780,594,0x187dbb },{ 780,594,0x187dbb } },
-            //auction house 3
-            { { 225,17,0x000063 },{ 225,17,0x000063 } },
-            // scanning     4
-            { { 166,19,0x4b4c4b },{ 166,19,0x4b4c4b } },
-            // Processing   5
-            { { 203,18,0xf8b04b },{ 203,18,0xf8b04b } },
-            // Queue        6
-            { { 450, 340,0x8f5614 },{ 450, 340,0x8f5614 } },
-            // Queue 2      7
-            { { 450, 332,0x8f5614 },{ 450, 332,0x8f5614 } },
-
-        };
 
         [DllImport("user32.dll", EntryPoint = "SetCursorPos")]
         static extern bool SetCursorPosition(int x, int y);
@@ -281,12 +313,6 @@ namespace wowinstance
 
         [DllImport("gdi32.dll")]
         static extern uint GetPixel(IntPtr hdc, int nXPos, int nYPos);
-
-        [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out POINT lpPoint);
-
-        [DllImport("gdi32.dll")]
-        public static extern uint SetPixel(IntPtr hdc, int X, int Y, int crColor);
 
         private static void ClearAucData(string accname)
         {
@@ -334,56 +360,6 @@ namespace wowinstance
             File.WriteAllText(current_path, final_out);
             Trace.WriteLine(getDT() + "Written to realm file");
         }
-        static public uint GetPixelColor(IntPtr hwnd, int x, int y)
-        {
-            IntPtr hdc = GetDC(hwnd);
-            uint pixel = GetPixel(hdc, x, y);
-            
-            ReleaseDC(hwnd, hdc);
-          
-            return pixel;
-        }
-        static public bool TestPixel(IntPtr wnd,int index, int factionIdx)
-        {
-            int x = colors_pixels[index, factionIdx, 0];
-            int y = colors_pixels[index, factionIdx, 1];
-            int color = 0;
-            int altColor = 0;
-            if (linux)
-            {   
-                color = colors_pixels_linux[index, factionIdx, 2];
-                altColor = colors_pixels_linux_alt[index, factionIdx, 2];
-            }
-            else if (InWindowsServer())
-            {
-                color = colors_pixels_ws[index, factionIdx, 2];
-            }
-            else
-                color = colors_pixels[index, factionIdx, 2];
-
-            uint col = GetPixelColor(wnd, x, y);
-
-            if (debug)
-                Trace.WriteLine($"Testing index {index} pixel at {x},{y} against {col} with {color}{(altColor != 0 ? " / " + altColor : "")}");
-
-            if (col == color || col == altColor)
-                return true;
-            else
-                return false;
-        }
-
-        static public bool WaitForPixel(IntPtr wnd, int index, int factionIdx, int maxSecs = 60)
-        {
-            int count = 0;
-            while (!TestPixel(wnd, index, factionIdx))
-            {
-                System.Threading.Thread.Sleep(1000);
-                count++;
-                if (count > maxSecs)
-                    return false;
-            }
-            return true;
-        }
 
         static void rightclick(IntPtr wnd, int x, int y)
         {
@@ -398,6 +374,58 @@ namespace wowinstance
 
         static int Main(string[] args)
         {
+            // Setup pixels to check
+            // 0: Title screen
+            var pixels = new PixelScan(true);
+            pixels.Add(PixelIndex.TitleScreen, new PixelScanData[]
+                {
+                    new PixelScanData(430, 450, new uint[] { 0x8a5418 })
+                });
+
+            // 1: Character select
+            pixels.Add(PixelIndex.CharacterSelect, new PixelScanData[]
+                {
+                    new PixelScanData(450, 550, new uint[] { 0x050d7c, 0x04046d, 0x050d7b, 0x070671, 0x070672 })
+                });
+
+            // 2: In game
+            pixels.Add(PixelIndex.InGame, new PixelScanData[]
+                {
+                    new PixelScanData(780, 594, new uint[] { 0x177cb9, 0x187dba, 0x187dbb })
+                });
+
+            // 3: Auction house open
+            pixels.Add(PixelIndex.AuctionHouseOpen, new PixelScanData[]
+                {
+                    new PixelScanData(225, 17, new uint[] { 0x000062, 0x000063 })
+                });
+
+            // 4: Auction house scanning
+            pixels.Add(PixelIndex.AuctionHouseScanning, new PixelScanData[]
+                {
+                    new PixelScanData(166, 19, new uint[] { 0x4b4c4b })
+                });
+
+            // 5: Auction house processing (also requires scanning)
+            pixels.Add(PixelIndex.AuctionHouseProcessing, new PixelScanData[]
+                {
+                    new PixelScanData(166, 19, new uint[] { 0x4b4c4b }),
+                    new PixelScanData(203, 18, new uint[] { 0xf8b04b })
+                });
+
+            // 6: Queue screen (No estimated time)
+            pixels.Add(PixelIndex.LoginInQueueNoEstimate, new PixelScanData[]
+                {
+                    new PixelScanData(450, 340, new uint[] { 0x8f5614 })
+                });
+
+            // 7: Queue screen (Estimated time)
+            pixels.Add(PixelIndex.LoginInQueueEstimate, new PixelScanData[]
+                {
+                    new PixelScanData(450, 332, new uint[] { 0x8f5614 })
+                });
+
+
             try
             {
                 if (args.Count() == 0)
@@ -484,18 +512,15 @@ namespace wowinstance
                     //System.Threading.Thread.Sleep(waitTime);
                     IntPtr wnd;
 
-                    System.Threading.Thread.Sleep(10000);
-                    if (p.MainWindowHandle == IntPtr.Zero)
-                    {
-                        p.Refresh();
-                        IntPtr[] wnds = GetProcessWindows(p.Id);
-                        wnd = wnds[0];
-                    }
-                    else
-                        wnd = p.MainWindowHandle;
+                    // Keep trying to get main window handle
+                    while (p.MainWindowHandle == IntPtr.Zero)
+                        System.Threading.Thread.Sleep(1000);
+
+                    wnd = p.MainWindowHandle;
+                    Trace.WriteLine(getDT() + "Found process window");
 
                     // Wait for login screen
-                    if (!WaitForPixel(wnd, 0, factionIdx))
+                    if (!pixels.WaitForPixel(wnd, PixelIndex.TitleScreen))
                     {
                         Trace.WriteLine(getDT() + "Never reached login screen");
                         SaveScreenshot(wnd);
@@ -532,22 +557,14 @@ namespace wowinstance
                     // By default wait 1 minute at character select
                     int charSelectWait = 60;
 
-                    // Make a short wait (5 seconds) to see if we're in a queue
-                    if (WaitForPixel(wnd, 7, factionIdx, 5))
+                    // Wait for either character select or either queue screens
+                    var thisPixel = pixels.WaitForPixels(wnd, new PixelIndex[] { PixelIndex.CharacterSelect, PixelIndex.LoginInQueueEstimate, PixelIndex.LoginInQueueNoEstimate }, false, charSelectWait);
+                    if (thisPixel != null && (thisPixel.Contains(PixelIndex.LoginInQueueEstimate) || thisPixel.Contains(PixelIndex.LoginInQueueNoEstimate)))
                     {
                         Console.WriteLine(getDT() + "We're in a queue, we'll wait a maximum of 15 minures for character select");
-                        SaveScreenshot(wnd);
                         charSelectWait = 15 * 60;
                     }
-                    // Make a short wait (15 seconds) to see if we're in a queue (look for the bigger queue window)
-                    else if (WaitForPixel(wnd, 6, factionIdx, 15))
-                    {
-                        Console.WriteLine(getDT() + "We're in a queue, we'll wait a maximum of 15 minures for character select");
-                        SaveScreenshot(wnd);
-                        charSelectWait = 15 * 60;
-                    }
-
-                    if (!WaitForPixel(wnd, 1, factionIdx, charSelectWait))
+                    if (thisPixel == null || !pixels.WaitForPixel(wnd, PixelIndex.CharacterSelect, charSelectWait))
                     {
                         Trace.WriteLine(getDT() + "Not at char select window");
                         SaveScreenshot(wnd);
@@ -567,7 +584,7 @@ namespace wowinstance
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     //System.Threading.Thread.Sleep(waitTime);
                     //SetForegroundWindow(p.MainWindowHandle);
-                    if (!WaitForPixel(wnd, 2, factionIdx))
+                    if (!pixels.WaitForPixel(wnd, PixelIndex.InGame))
                     {
                         Trace.WriteLine(getDT() + "Not in game");
                         SaveScreenshot(wnd);
@@ -609,7 +626,7 @@ namespace wowinstance
                         rightclick(wnd, 0, 0);
                     }
                     //System.Threading.Thread.Sleep(3000);
-                    if (!WaitForPixel(wnd, 3, factionIdx))
+                    if (!pixels.WaitForPixel(wnd, PixelIndex.AuctionHouseOpen))
                     {
                         Trace.WriteLine(getDT() + "Auction house not opened");
                         SaveScreenshot(wnd);
@@ -641,7 +658,7 @@ namespace wowinstance
 
                     // Check if scanning started
                     var maxtries = 5;
-                    while (!WaitForPixel(wnd, 4, factionIdx, 5) && maxtries > 0)
+                    while (!pixels.WaitForPixel(wnd, PixelIndex.AuctionHouseScanning, 5) && maxtries > 0)
                     {
                         // If not, keep trying to initiate scan
                         SaveScreenshot(wnd);
@@ -668,6 +685,8 @@ namespace wowinstance
                     int counter = 0;
                     int failcount = 0;
                     bool scanning = false;
+                    int scanCompleteCount = 0;
+                    int notRespondingCount = 0;
                     while (p.Responding && !p.HasExited)
                     {
                         /*POINT pp;
@@ -682,24 +701,42 @@ namespace wowinstance
 
                         if (!p.Responding)
                         {
-                            Trace.WriteLine(getDT() + "Warcraft process stopped responding");
-                            p.Kill();
-                            p.WaitForExit();
-                            p.Dispose();
-                            Environment.Exit(3);
-                            return 3;
+                            if (notRespondingCount > 5)
+                            {
+                                Trace.WriteLine(getDT() + "Warcraft process stopped responding");
+                                p.Kill();
+                                p.WaitForExit();
+                                p.Dispose();
+                                Environment.Exit(3);
+                                return 3;
+                            }
+                            notRespondingCount++;
+                        }
+                        else
+                        {
+                            notRespondingCount = 0;
                         }
 
                         // Check if scanning is in processing phase (getall scan available, play button not)
                         // I think icecrown times out here sometimes and is killed before saving
-                        if (!scanning && TestPixel(wnd, 5, factionIdx) && TestPixel(wnd, 4, factionIdx))
+                        if (!scanning && pixels.TestPixel(wnd, PixelIndex.AuctionHouseProcessing))
                         {
-                            SaveScreenshot(wnd);
-                            scanning = true;
-                            Trace.WriteLine(getDT() + "Scan complete, now processing");
+                            // If we found this 3 times in a row it must be processing
+                            // Can get false positives on page changes
+                            if (scanCompleteCount == 3)
+                            {
+                                SaveScreenshot(wnd);
+                                scanning = true;
+                                Trace.WriteLine(getDT() + "Scan complete, now processing");
+                            }
+                            scanCompleteCount++;
+                        }
+                        else
+                        {
+                            scanCompleteCount = 0;
                         }
 
-                        if (!scanning && !TestPixel(wnd, 2, factionIdx) && (counter % 10) == 0)
+                        if (!scanning && !pixels.TestPixel(wnd, PixelIndex.InGame) && (counter % 10) == 0)
                         {
                             SaveScreenshot(wnd);
                             Trace.WriteLine(getDT() + "We are not ingame any more , mostly restart or crash");
@@ -720,7 +757,7 @@ namespace wowinstance
                             }
 
                         }
-                        if (!scanning && !TestPixel(wnd, 3, factionIdx) && (counter % 10) == 0)
+                        if (!scanning && !pixels.TestPixel(wnd, PixelIndex.AuctionHouseOpen) && (counter % 10) == 0)
                         {
                             //SetForegroundWindow(p.MainWindowHandle);
                             Trace.WriteLine(getDT() + "Auction House not opened, trying to reopen and continue");
