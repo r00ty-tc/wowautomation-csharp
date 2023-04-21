@@ -108,22 +108,43 @@ namespace wowlauncher
         public static string Get(string uri)
         {
             // Initialise return value
-            string returnValue;
+            string returnValue = null;
+
+            // Wait max of 1 minute
+            client.Timeout = new TimeSpan(0, 1, 0);
+
             // Perform get action
             using (var responseTask = client.GetAsync(uri))
             {
-                // Wait for response, and ensure there wasn't an error
-                responseTask.Wait();
-                responseTask.Result.EnsureSuccessStatusCode();
-
-                // Get response string
-                var response = responseTask.Result;
-                using (var resultTask = response.Content.ReadAsStringAsync())
+                try
                 {
-                    resultTask.Wait();
+                    // Wait for response, and ensure there wasn't an error
+                    responseTask.Wait();
+                    responseTask.Result.EnsureSuccessStatusCode();
 
-                    // Set return value to response string
-                    returnValue = resultTask.Result;
+                    // Get response string
+                    var response = responseTask.Result;
+                    using (var resultTask = response.Content.ReadAsStringAsync())
+                    {
+                        resultTask.Wait();
+
+                        // Set return value to response string
+                        returnValue = resultTask.Result;
+                    }
+                }
+                catch (TaskCanceledException ex)
+                {
+                    Console.WriteLine($"Task was cancelled while getting URI {uri} with following exception:");
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine(ex.StackTrace);
+                    Environment.Exit(1);
+                }
+                catch ( HttpRequestException ex)
+                {
+                    Console.WriteLine($"Http error while getting URI {uri} with following exception:");
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine(ex.StackTrace);
+                    Environment.Exit(1);
                 }
             }
 
