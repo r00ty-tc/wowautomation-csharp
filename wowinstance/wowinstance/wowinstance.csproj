@@ -7,8 +7,7 @@
 	  <PublishSingleFile>true</PublishSingleFile>
 	  <PublishReadyToRun>true</PublishReadyToRun>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <OutputPath>..\..\..\..\Games\WoW-335_Spare\</OutputPath>
-    <BaseOutputPath>E:\Games\WoW-335_Spare</BaseOutputPath>
+	  <BaseOutputPath>E:\Games\wowauction</BaseOutputPath>
   </PropertyGroup>
   <ItemGroup>
     <Compile Update="Program.cs" />

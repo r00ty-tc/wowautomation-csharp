@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using System.Diagnostics;
@@ -42,7 +43,7 @@ public class HttpClientEx : HttpClient
 {
     public HttpResponseMessage Get(Uri address)
     {
-        var responseTask = base.GetAsync(address);
+        var responseTask = GetAsync(address);
         responseTask.Wait(((int)Timeout.TotalMilliseconds));
         responseTask.Result.EnsureSuccessStatusCode();
         var result = responseTask.Result;
@@ -67,7 +68,7 @@ public class HttpClientEx : HttpClient
 
         uploadRequest.Content = webContent;
         string responseText;
-        using (var webResponse = base.Send(uploadRequest))
+        using (var webResponse = Send(uploadRequest))
         {
             // Check response was successful
             if (!webResponse.IsSuccessStatusCode)
@@ -179,7 +180,7 @@ namespace wowinstance
             int count = 0;
             while (!TestPixel(wnd, index))
             {
-                System.Threading.Thread.Sleep(1000);
+                Thread.Sleep(1000);
                 count++;
                 if (count > maxSecs)
                     return false;
@@ -198,7 +199,7 @@ namespace wowinstance
                 if (result != null)
                     return result;
 
-                System.Threading.Thread.Sleep(1000);
+                Thread.Sleep(1000);
                 count++;
                 if (count > maxSecs)
                     return null;
@@ -279,7 +280,7 @@ namespace wowinstance
             for (var i = 0; i < str.Length; i++)
             {
                 PostMessage(wnd, WM_CHAR, str[i], 0);
-                System.Threading.Thread.Sleep(50);
+                Thread.Sleep(50);
             }
         }
         static void sendKeydown(IntPtr wnd, int vk)
@@ -368,7 +369,7 @@ namespace wowinstance
             var point = ((int)y << 16) & (int)x;
 
             PostMessage(wnd, WM_RBUTTONDOWN, 0, point);
-            System.Threading.Thread.Sleep(100);
+            Thread.Sleep(100);
             PostMessage(wnd, WM_RBUTTONUP, 0, point);
         }
 
@@ -416,13 +417,13 @@ namespace wowinstance
             // 6: Queue screen (No estimated time)
             pixels.Add(PixelIndex.LoginInQueueNoEstimate, new PixelScanData[]
                 {
-                    new PixelScanData(450, 340, new uint[] { 0x8f5614 })
+                    new PixelScanData(450, 340, new uint[] { 0x8f5614, 0x8f5613 })
                 });
 
             // 7: Queue screen (Estimated time)
             pixels.Add(PixelIndex.LoginInQueueEstimate, new PixelScanData[]
                 {
-                    new PixelScanData(450, 332, new uint[] { 0x8f5614 })
+                    new PixelScanData(450, 332, new uint[] { 0x8f5614, 0x8f5613 })
                 });
 
 
@@ -514,7 +515,7 @@ namespace wowinstance
 
                     // Keep trying to get main window handle
                     while (p.MainWindowHandle == IntPtr.Zero)
-                        System.Threading.Thread.Sleep(1000);
+                        Thread.Sleep(1000);
 
                     wnd = p.MainWindowHandle;
                     Trace.WriteLine(getDT() + "Found process window");
@@ -537,21 +538,21 @@ namespace wowinstance
 
                     // Wait a second before logging in
                     Trace.WriteLine(getDT() + "Reached login screen");
-                    System.Threading.Thread.Sleep(1000);
+                    Thread.Sleep(1000);
 
                     //SetForegroundWindow(p.MainWindowHandle);
                     sendChars(wnd, accountname);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     sendKeys(wnd, (int)VirtualKeyCode.TAB);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.TAB);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     sendChars(wnd, password);
                     //InputSimulator.SimulateTextEntry(password);
-                    System.Threading.Thread.Sleep(1000);
+                    Thread.Sleep(1000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     //System.Threading.Thread.Sleep(waitTime);
-                    System.Threading.Thread.Sleep(2000);
+                    Thread.Sleep(2000);
                     //SetForegroundWindow(p.MainWindowHandle);
 
                     // By default wait 1 minute at character select
@@ -579,7 +580,7 @@ namespace wowinstance
                         return 2;
                     }
                     Trace.WriteLine(getDT() + "Passing char select screen");
-                    System.Threading.Thread.Sleep(2000);
+                    Thread.Sleep(2000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     //System.Threading.Thread.Sleep(waitTime);
@@ -599,19 +600,19 @@ namespace wowinstance
                         return 2;
                     }
                     Trace.WriteLine(getDT() + "In game");
-                    System.Threading.Thread.Sleep(2000);
+                    Thread.Sleep(2000);
                     var start_url = base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction;
 
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     sendChars(wnd, "tar " + auctioneer);
                     //InputSimulator.SimulateTextEntry("/tar "+auctioneer);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
-                    System.Threading.Thread.Sleep(500);
+                    Thread.Sleep(500);
                     if (expac_mode == EXPAC_WOTLK)
                     {
                         sendKeys(wnd, (int)VirtualKeyCode.OEM_6);
@@ -640,17 +641,17 @@ namespace wowinstance
                         return 2;
                     }
                     Trace.WriteLine(getDT() + "Auction house opened");
-                    System.Threading.Thread.Sleep(5000);
+                    Thread.Sleep(5000);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     if (expac_mode == EXPAC_TBC)
                         sendChars(wnd, "script AucAdvanced.Scan.StartScan()");
                     else
                         sendChars(wnd, "auc scan");
 
-                    System.Threading.Thread.Sleep(100);
+                    Thread.Sleep(100);
                     sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                     //InputSimulator.SimulateTextEntry("/auc scan");
@@ -663,17 +664,17 @@ namespace wowinstance
                         // If not, keep trying to initiate scan
                         SaveScreenshot(wnd);
                         Trace.WriteLine(getDT() + "Retrying auction scan");
-                        System.Threading.Thread.Sleep(1000);
+                        Thread.Sleep(1000);
                         sendKeys(wnd, (int)VirtualKeyCode.RETURN);
-                        System.Threading.Thread.Sleep(100);
+                        Thread.Sleep(100);
                         sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
-                        System.Threading.Thread.Sleep(100);
+                        Thread.Sleep(100);
                         if (expac_mode == EXPAC_TBC)
                             sendChars(wnd, "script AucAdvanced.Scan.StartScan()");
                         else
                             sendChars(wnd, "auc scan");
 
-                        System.Threading.Thread.Sleep(100);
+                        Thread.Sleep(100);
                         sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                         maxtries--;
                     }
@@ -762,18 +763,18 @@ namespace wowinstance
                             //SetForegroundWindow(p.MainWindowHandle);
                             Trace.WriteLine(getDT() + "Auction House not opened, trying to reopen and continue");
                             sendKeys(wnd, (int)VirtualKeyCode.RETURN);
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendChars(wnd, "tar " + auctioneer);
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                             //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                             //InputSimulator.SimulateTextEntry("/tar " + auctioneer);
                             //InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                             if (expac_mode == EXPAC_WOTLK)
                             {
-                                System.Threading.Thread.Sleep(500);
+                                Thread.Sleep(500);
                                 sendKeys(p.MainWindowHandle, (int)VirtualKeyCode.OEM_6);
                             }
                             else if (expac_mode == EXPAC_TBC)
@@ -785,20 +786,20 @@ namespace wowinstance
                                 rightclick(wnd, 0, 0);
                             }
                             //InputSimulator.SimulateKeyPress(VirtualKeyCode.OEM_6);
-                            System.Threading.Thread.Sleep(3000);
+                            Thread.Sleep(3000);
                             sendKeys(wnd, (int)VirtualKeyCode.RETURN);
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendKeydown(wnd, (int)VirtualKeyCode.OEM_2);
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendChars(wnd, "auc scan");
-                            System.Threading.Thread.Sleep(100);
+                            Thread.Sleep(100);
                             sendKeys(wnd, (int)VirtualKeyCode.RETURN);
                             /*InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);
                             InputSimulator.SimulateTextEntry("/auc scan");
                             InputSimulator.SimulateKeyPress(VirtualKeyCode.RETURN);*/
                         }
 
-                        System.Threading.Thread.Sleep(1000);
+                        Thread.Sleep(1000);
                         if (counter >= timeout)
                         {
                             if ((DateTime.Now.ToUniversalTime()-p.StartTime.ToUniversalTime()).TotalSeconds > wowTimeout * 60)
@@ -845,7 +846,7 @@ namespace wowinstance
                             counter++;
                     }
                     Trace.WriteLine(getDT() + "Process Complete...");
-                    System.Threading.Thread.Sleep(5000);
+                    Thread.Sleep(5000);
                     current_path = Directory.GetCurrentDirectory();
                     current_path += $"{folderSeparator}WTF{folderSeparator}Account{folderSeparator}" + accountname.ToUpper() + $"{folderSeparator}SavedVariables{folderSeparator}Auc-ScanData.lua";
                     p.Dispose();
