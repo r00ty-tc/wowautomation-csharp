@@ -318,8 +318,9 @@ namespace wowinstance
         private static void ClearAucData(string accname)
         {
             var current_path = Directory.GetCurrentDirectory();
-            current_path += $"{folderSeparator}WTF{folderSeparator}Account{folderSeparator}" + accname.ToUpper() + "{folderSeparator}SavedVariables{folderSeparator}";
+            current_path += $"{folderSeparator}WTF{folderSeparator}Account{folderSeparator}" + accname.ToUpper() + $"{folderSeparator}SavedVariables{folderSeparator}";
             string final_path = current_path + "Auc-ScanData.lua";
+            Trace.WriteLine($"Deleting {final_path}");
             if (File.Exists(final_path))
                 File.Delete(final_path);
             final_path = current_path + "Auc-ScanData.lua.bak";
@@ -386,7 +387,7 @@ namespace wowinstance
             // 1: Character select
             pixels.Add(PixelIndex.CharacterSelect, new PixelScanData[]
                 {
-                    new PixelScanData(450, 550, new uint[] { 0x050d7c, 0x04046d, 0x050d7b, 0x070671, 0x070672 })
+                    new PixelScanData(450, 550, new uint[] { 0x050d7c, 0x04046d, 0x050d7b, 0x070671, 0x070672, 0x01026c })
                 });
 
             // 2: In game
@@ -505,8 +506,11 @@ namespace wowinstance
                 SetupRealm(realm_name, realm_url);
                 if (p.Start())
                 {
-                    HttpClientEx status_client = new HttpClientEx();
-                    status_client.Timeout = TimeSpan.FromSeconds(60);
+                    HttpClientEx status_client = new HttpClientEx()
+                    {
+                        Timeout = TimeSpan.FromSeconds(60)
+                    };
+                    Thread.Sleep(500);
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                     status_client.DownloadString(new Uri((base_url + "scheduler/start?realm_id=" + realm_id + "&faction_id=" + faction)));
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
