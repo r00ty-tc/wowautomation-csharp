@@ -103,15 +103,13 @@ namespace wowlauncher
     class Program
     {
         static HttpClient client;
+        static readonly string[] extensions = { ".jpg", ".png" };
 
         // Perform blocking http Get using async methods
         public static string Get(string uri)
         {
             // Initialise return value
             string returnValue = null;
-
-            // Wait max of 1 minute
-            client.Timeout = new TimeSpan(0, 1, 0);
 
             // Perform get action
             using (var responseTask = client.GetAsync(uri))
@@ -189,7 +187,10 @@ namespace wowlauncher
             handler.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
 
             // Initialize client
-            client = new HttpClient(handler);
+            client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(60)
+            };
 
             // Set linux flag depending on command line
             bool linux = false;
@@ -218,7 +219,7 @@ namespace wowlauncher
                 wowTimeout = 120;
 
             // Add some time for wowinstance to finish before we force its hand
-            wowTimeout += 10;
+            wowTimeout += 30;
 
             var nextScreenshotClear = DateTime.UtcNow;
             while (true) // loop always
@@ -226,8 +227,8 @@ namespace wowlauncher
                 // Once a day clean up screenshots older than 2 days
                 if (DateTime.UtcNow >= nextScreenshotClear)
                 {
-                    // Get file info for all jpg files in screenshots folder
-                    var files = Directory.GetFiles(Directory.GetCurrentDirectory() + "\\Screenshots", "*.jpg").Select(file => new FileInfo(file));
+                    // Get file info for all jpg/png files in screenshots folder
+                    var files = Directory.GetFiles(Directory.GetCurrentDirectory() + "\\Screenshots", "*.*").Select(file => new FileInfo(file)).Where(file => extensions.Contains(file.Extension.ToLower()));
                     Console.WriteLine($"Checking {files.Count()} screenshots for deletion candidates");
                     int deletedFiles = 0;
 
@@ -235,7 +236,9 @@ namespace wowlauncher
                     foreach (var file in files)
                     {
                         // Extract date from filename
-                        var datePart = file.Name.Replace("WoWScrnShot_", "").Replace(".jpg", "");
+                        var datePart = file.Name.Replace("WoWScrnShot_", "");
+                        foreach (var extension in extensions)
+                            datePart = datePart.Replace(extension, "", true, System.Globalization.CultureInfo.InvariantCulture);
 
                         // Validate the date
                         if (DateTime.TryParseExact(datePart, "MMddyy_HHmmss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out DateTime fileDate))
