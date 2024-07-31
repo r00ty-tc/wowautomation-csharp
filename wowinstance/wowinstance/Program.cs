@@ -387,7 +387,8 @@ namespace wowinstance
             // 1: Character select
             pixels.Add(PixelIndex.CharacterSelect, new PixelScanData[]
                 {
-                    new PixelScanData(450, 550, new uint[] { 0x050d7c, 0x04046d, 0x050d7b, 0x070671, 0x070672, 0x01026c })
+                    new PixelScanData(450, 550, new uint[] { 0x050d7c, 0x04046d, 0x050d7b, 0x070671, 0x070672, 0x01026c, 0x020573 }),
+                    new PixelScanData(350, 552, new uint[] { 0x020373 })
                 });
 
             // 2: In game
